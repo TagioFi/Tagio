@@ -27,6 +27,8 @@ jobs:
       packages: write
     steps:
       - uses: actions/checkout@v4
+      - id: repo
+        run: echo "name=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -37,8 +39,8 @@ jobs:
           context: ./backend
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}-backend:latest
-            ghcr.io/${{ github.repository }}-backend:${{ github.sha }}
+            ghcr.io/${{ steps.repo.outputs.name }}-backend:latest
+            ghcr.io/${{ steps.repo.outputs.name }}-backend:${{ github.sha }}
 
   release:
     needs: build-push

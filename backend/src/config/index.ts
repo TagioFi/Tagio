@@ -16,6 +16,4 @@ export const config = {
   redisUrl: process.env.REDIS_URL ?? "",
 
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? "",
-
-  gasStationPrivateKey: process.env.GAS_STATION_PRIVATE_KEY ?? "",
 };
