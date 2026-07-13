@@ -38,19 +38,32 @@ Monorepo. Here's what lives where:
 
 ## Backend URL
 
-Not deployed yet. Locally:
+**Live:**
 ```
-VITE_API_URL=http://localhost:3001
+VITE_API_URL=https://api.tagiopay.com
 ```
-Will be updated here once there's a live URL.
+For local frontend dev against the live backend, use this same value — there's no
+separate staging backend right now. `http://localhost:3001` still works if you're
+also running the backend locally (`cd backend && bun dev`, needs its own `.env`).
 
 ---
 
 ## Contract addresses
 
-Not deployed yet — Robinhood Chain RPC/chain ID and deployed addresses will be added
-here once available. You'll need the resolver address + ABI to build any transactions
-yourself (register/pay/update) directly from the frontend via viem/wagmi — the backend
+**Live on Robinhood Chain mainnet:**
+
+| | |
+| :--- | :--- |
+| Chain ID | `4663` |
+| RPC | `https://rpc.mainnet.chain.robinhood.com` |
+| `HashtagResolver` | `0x1326bBA97a060b6c4B445E0dD83342203795725E` |
+| `HashtagNFT` | `0x364469b9709D7E0E2bf6a049Aca3a8B436FbcEa3` |
+
+This is mainnet — real funds, real gas, permanent hashtag registrations. Test
+carefully; there's no testnet deployment to throw away mistakes on right now.
+
+You'll need the resolver address + ABI to build any transactions yourself
+(register/pay/update) directly from the frontend via viem/wagmi — the backend
 does not submit transactions, it only reads and indexes them.
 
 The resolver ABI (functions + events) lives at `backend/src/services/onchain/abi.ts`
