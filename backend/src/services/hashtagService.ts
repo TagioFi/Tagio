@@ -1,10 +1,12 @@
 import { pool } from "../db/pool";
-import { getAccount, getTransactionReceipt, decodeResolverEvents } from "./onchain/client";
+import { getAccount, getTransactionReceipt, decodeResolverEvents, hashtagOwner as readHashtagOwner } from "./onchain/client";
 import { normalizeHashtag } from "./hashtagValidation";
 import type { Hash } from "viem";
 
 async function hydrateFromContract(hashtag: string): Promise<void> {
-  const account = await getAccount(hashtag);
+  // Ownership has exactly one source of truth on the contract side (the NFT's
+  // ownerOf), so it's fetched separately rather than trusted from getAccount.
+  const [account, owner] = await Promise.all([getAccount(hashtag), readHashtagOwner(hashtag)]);
 
   await pool.query(
     `INSERT INTO hashtags (hashtag, owner_wallet, name, image_url, website_url, nft_token_id, recovery_hash, registered_at, expires_at, active, total_volume_usd)
@@ -21,7 +23,7 @@ async function hydrateFromContract(hashtag: string): Promise<void> {
        last_interaction_at = now()`,
     [
       hashtag,
-      account.owner,
+      owner,
       account.name,
       account.imageUrl,
       account.websiteUrl,
@@ -93,6 +95,11 @@ export async function confirmTransaction(txHash: Hash, hashtagRaw: string): Prom
         );
         break;
       }
+
+      // No DB action needed: a reclaim always fires HashtagRegistered in the same
+      // transaction, which already upserts the row and wipes stale payouts/socials.
+      case "HashtagReclaimed":
+        break;
     }
   }
 }

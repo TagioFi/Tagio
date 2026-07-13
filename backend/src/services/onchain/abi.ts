@@ -23,11 +23,10 @@ export const hashtagResolverAbi = [
             ],
           },
           { name: "registeredAt", type: "uint256" },
-          { name: "owner", type: "address" },
           { name: "nftTokenId", type: "uint256" },
           { name: "expiresAt", type: "uint256" },
           { name: "recoveryHash", type: "bytes32" },
-          { name: "totalVolume", type: "uint64" },
+          { name: "totalVolume", type: "uint256" },
           {
             name: "payouts",
             type: "tuple[]",
@@ -117,6 +116,14 @@ export const hashtagResolverAbi = [
       { name: "oldOwner", type: "address", indexed: true },
       { name: "newOwner", type: "address", indexed: true },
       { name: "timestamp", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    type: "event",
+    name: "HashtagReclaimed",
+    inputs: [
+      { name: "hashtag", type: "string", indexed: true },
+      { name: "previousOwner", type: "address", indexed: true },
     ],
   },
 ] as const;

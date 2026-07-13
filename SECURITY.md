@@ -28,6 +28,10 @@ action. Reporters are credited in the fix unless they ask otherwise.
 - **Reentrancy on payment splitting** — `receivePayment`/`receiveTokenPayment` push funds to multiple external wallets in a loop; both are `nonReentrant` but any future change to the distribution logic must preserve checks-effects-interactions.
 - **Event-sync trust boundary** — `POST /hashtags/confirm-transaction` decodes onchain events and writes them verbatim to Postgres; the backend must always re-derive state from the receipt/contract, never trust client-supplied metadata.
 - **Subscription-expiry griefing** — anyone can call `renewSubscription`, so it must never be gated in a way that lets a third party lock out the actual owner.
+- **Reclaim-and-burn correctness** — a hashtag becomes registrable by anyone once its 30-day subscription plus 72-hour grace period both lapse; registration then burns the previous owner's NFT and wipes payouts/socials before re-minting. This is intended (it's what prevents permanent squatting), but the burn-then-mint sequence must stay atomic within `registerHashtag` — a partial failure must revert the whole reclaim, never leave a hashtag NFT-less.
+- **NFT as sole ownership source of truth** — the resolver has no owner field of its own; `hashtagOwner` always reads `HashtagNFT.ownerOf`. Any future change must not reintroduce a second, driftable copy of ownership.
+- **Fee/payment currency confusion** — `settlementToken` is owner-mutable (`address(0)` = native, else an ERC-20). `_collectFee` and `receiveTokenPayment` must keep rejecting a nonzero `msg.value` on the ERC-20 path and an exact-match `msg.value` on the native path — a mismatch there is a direct path to stuck or under-collected fees.
+- **Pause scope** — `pause()`/`unpause()` (owner-only) gate `receivePayment`/`receiveTokenPayment` only, by design; registration, renewal, and metadata/payout updates intentionally stay live during a pause.
 
 ## Deployed contract addresses
 

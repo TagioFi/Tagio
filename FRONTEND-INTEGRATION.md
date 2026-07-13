@@ -53,7 +53,9 @@ and mirrors `contracts/src/HashtagResolver.sol` — copy it into your wagmi/viem
 
 1. **Register/pay/update onchain directly** — the frontend calls the resolver contract
    itself (register, receivePayment, updatePayouts, updateMetadata, renewSubscription,
-   transferViaRecoveryPhrase). The backend does not do this for you.
+   transferHashtag, transferViaRecoveryPhrase). The backend does not do this for you,
+   and there's no gas sponsorship — every call is sent (and its gas paid) by the user's
+   own wallet.
 2. **Confirm with the backend** — after every onchain action, call:
 
    `POST /hashtags/confirm-transaction`
@@ -62,6 +64,29 @@ and mirrors `contracts/src/HashtagResolver.sol` — copy it into your wagmi/viem
    ```
    The backend fetches the receipt, decodes the resolver's events, and syncs Postgres.
    Do this immediately after the transaction confirms, before reading the hashtag back.
+
+### Things that matter for how you build the register/pay screens
+
+- **Ownership is the NFT, not a stored field.** `hashtagOwner(hashtag)` reads the
+  HashtagNFT's `ownerOf` directly. A hashtag can also change hands via a plain
+  ERC-721 transfer (marketplace, wallet-to-wallet) — that's fully supported and
+  reflected immediately, but it won't emit a resolver event, so the backend's DB copy
+  of `owner_wallet` will look stale until the new owner touches the resolver again
+  (e.g. `updateMetadata`) or you add a manual re-sync path.
+- **Subscription is 30 days + a 72-hour grace period.** After that, the hashtag stops
+  accepting payments (`SubscriptionExpired`) and — once past both — becomes
+  registrable by *anyone*, which burns the old NFT and wipes its payouts/socials.
+  Surface the expiry countdown; a lapsed hashtag isn't recoverable by re-renewing,
+  it can be taken by someone else.
+- **`registerHashtag` and `renewSubscription` are `payable`.** Fees are denominated
+  in whatever `settlementToken` currently is: `address(0)` means native Robinhood ETH
+  (send exact fee as `msg.value`), a real ERC-20 address means approve + zero
+  `msg.value`. Read `resolver.settlementToken()` before building the fee-payment step.
+- **`receivePayment` (native) is always available**, regardless of what
+  `settlementToken` is set to. `receiveTokenPayment` only works once `settlementToken`
+  points at a real ERC-20 — it reverts `SettlementTokenNotSet` while native-only.
+- **Payments can be paused** by TagioPay (`whenNotPaused` on both payment functions,
+  not on register/renew/metadata) — handle the `EnforcedPause` revert gracefully.
 
 ---
 

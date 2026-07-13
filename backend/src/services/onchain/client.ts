@@ -42,6 +42,15 @@ export async function isActive(hashtag: string): Promise<boolean> {
   });
 }
 
+export async function hashtagOwner(hashtag: string): Promise<`0x${string}`> {
+  return getPublicClient().readContract({
+    address: config.robinhood.resolverAddress,
+    abi: hashtagResolverAbi,
+    functionName: "hashtagOwner",
+    args: [hashtag],
+  });
+}
+
 export async function isRegistered(hashtag: string): Promise<boolean> {
   return getPublicClient().readContract({
     address: config.robinhood.resolverAddress,
