@@ -1,7 +1,7 @@
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
 ![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)
-![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-TanStack_Start-646CFF?logo=vite&logoColor=white)
 ![Foundry](https://img.shields.io/badge/Foundry-Solidity-black?logo=ethereum&logoColor=white)
 
 # TagioPay
@@ -35,7 +35,7 @@ separate sibling product and is not part of this repo.
 ## Repo structure
 
 ```
-/                 Next.js frontend (owned by a separate frontend developer)
+/                 Vite + TanStack Start frontend (owned by a separate frontend developer)
 /backend          Bun + Express + Postgres API
 /contracts        Foundry — HashtagResolver + HashtagNFT (Solidity)
 /technical-docs   Product/PRD documents
@@ -66,18 +66,20 @@ forge test
 ```bash
 bun install
 cp .env.example .env
+bun run check   # typecheck
 bun dev
 ```
 
 ## Roadmap
 
-- [x] HashtagResolver + HashtagNFT contracts (Foundry, tested)
+- [x] HashtagResolver + HashtagNFT contracts (Foundry, tested — NFT-sourced ownership, reclaim-on-expiry, pausable payments)
 - [x] Backend scaffold (Postgres schema, event-sync service, resolve/auth/transactions routes)
-- [ ] Deploy contracts to Robinhood Chain testnet
+- [x] Frontend merged in from its own repo (Vite + TanStack Start + shadcn dashboard, built via Lovable)
+- [ ] Deploy contracts to Robinhood Chain mainnet (deployer wallet generated, pending funding)
 - [ ] Wire real Postgres + RPC credentials, deploy backend
-- [ ] Frontend build-out (separate developer)
+- [ ] Wire frontend to the live backend API (`VITE_API_URL`) — not yet connected
 - [ ] Social verification bot layer (Telegram/X)
 
 ## Tech stack
 
-Next.js 15 · Tailwind · Bun · Express · PostgreSQL · viem · Foundry/Solidity · Robinhood Chain (EVM L2)
+Vite · TanStack Start/Router · React 19 · Tailwind · shadcn/Radix · Bun · Express · PostgreSQL · viem · Foundry/Solidity · Robinhood Chain (EVM L2)

@@ -9,11 +9,13 @@ Internal document for the frontend developer. Not required reading for backend/c
 Monorepo. Here's what lives where:
 
 ```
-/                        ← Next.js frontend (your domain)
-  app/                   ← App Router pages
-  components/            ← shadcn UI components
-  lib/utils.ts           ← cn() utility
-  .env / .env.example    ← frontend env vars
+/                        ← Vite + TanStack Start frontend (your domain)
+  src/routes/            ← TanStack Router routes (__root.tsx, index.tsx, dashboard.tsx)
+  src/pages/             ← page-level components
+  src/components/ui/     ← shadcn UI components
+  src/lib/utils.ts       ← cn() utility
+  src/server.ts          ← SSR entry (TanStack Start)
+  .env / .env.example    ← frontend env vars (VITE_API_URL)
 
 /backend/                ← Bun + Express API (NOT yours — do not touch)
   src/routes/            ← hashtags, resolve, transactions, auth, health
@@ -25,13 +27,20 @@ Monorepo. Here's what lives where:
   src/HashtagNFT.sol
 ```
 
+> This frontend was merged in from what used to be a separate repo
+> (`tik-maker5/tagio`, built via Lovable). That repo still exists and is still
+> connected to Lovable — if you keep developing through Lovable, point it at
+> **this** repo (`tagiopay`) instead, or changes will land in the old repo and
+> need to be re-merged by hand. `.lovable/project.json` and `AGENTS.md` came
+> across as-is; update `.lovable/project.json` if you reconnect Lovable here.
+
 ---
 
 ## Backend URL
 
 Not deployed yet. Locally:
 ```
-NEXT_PUBLIC_API_URL=http://localhost:3001
+VITE_API_URL=http://localhost:3001
 ```
 Will be updated here once there's a live URL.
 

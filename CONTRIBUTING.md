@@ -5,7 +5,7 @@
 - Robinhood Chain testnet deployment scripts and address bookkeeping
 - Backend: real Postgres/RPC wiring, additional resolver event coverage
 - Contracts: gas optimization passes on `HashtagResolver`, additional invariant tests
-- Frontend: owned by a separate developer — see `FRONTEND-INTEGRATION.md` before touching `app/` or `components/`
+- Frontend: owned by a separate developer — see `FRONTEND-INTEGRATION.md` before touching `src/`
 
 ## Out of scope
 
@@ -27,7 +27,8 @@ Copy `.env.example` → `.env` in the root and in `backend/`, filling in real va
 ## Workflow
 
 Fork → branch → PR. One concern per PR. Contract changes need `forge test` passing;
-backend changes need `bun run check` and `bun test` passing before review.
+backend changes need `bun run check` and `bun test` passing; frontend changes need
+`bun run check` passing before review.
 
 ## Commit style
 

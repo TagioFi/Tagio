@@ -1,19 +1,48 @@
+# Env files (root frontend, backend, contracts) — never commit secrets
 .env
 .env.local
 .env.*.local
 backend/.env
-.next/
-out/
-node_modules/
+contracts/.env
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+.output
+.vinxi
+.tanstack/**
+.nitro
+*.local
 bun.lockb
-bun.lock
-dist/
-build/
+tsconfig.tsbuildinfo
+
+# Wrangler / Cloudflare
+.wrangler/
+.dev.vars
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.pem
+
+# Contracts (Foundry) — also covered by contracts/.gitignore, kept here for belt-and-suspenders
 contracts/out/
 contracts/cache/
 contracts/lib/
 contracts/broadcast/
-.DS_Store
-*.pem
-.vercel
-tsconfig.tsbuildinfo
