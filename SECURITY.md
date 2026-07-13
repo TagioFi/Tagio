@@ -35,4 +35,13 @@ action. Reporters are credited in the fix unless they ask otherwise.
 
 ## Deployed contract addresses
 
-Not yet deployed. Will be added here once live on Robinhood Chain testnet/mainnet.
+Robinhood Chain mainnet (chain ID 4663):
+
+| Contract | Address |
+| :--- | :--- |
+| `HashtagResolver` | `0x1326bBA97a060b6c4B445E0dD83342203795725E` |
+| `HashtagNFT` | `0x364469b9709D7E0E2bf6a049Aca3a8B436FbcEa3` |
+
+Owner/fee wallet: `0x60a2fC0D95DE145cf1f913194AeD627D61c8b530` (currently a
+software-held deployer key — see the note in the deployment history about
+migrating this to a hardware wallet/multisig).

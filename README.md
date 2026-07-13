@@ -75,8 +75,9 @@ bun dev
 - [x] HashtagResolver + HashtagNFT contracts (Foundry, tested — NFT-sourced ownership, reclaim-on-expiry, pausable payments)
 - [x] Backend scaffold (Postgres schema, event-sync service, resolve/auth/transactions routes)
 - [x] Frontend merged in from its own repo (Vite + TanStack Start + shadcn dashboard, built via Lovable)
-- [ ] Deploy contracts to Robinhood Chain mainnet (deployer wallet generated, pending funding)
-- [ ] Wire real Postgres + RPC credentials, deploy backend
+- [x] Deploy contracts to Robinhood Chain mainnet — see `SECURITY.md` for live addresses
+- [x] Backend deployed, live at `api.tagiopay.com`
+- [ ] Wire resolver/NFT addresses into the deployed backend's env (still points to no contract)
 - [ ] Wire frontend to the live backend API (`VITE_API_URL`) — not yet connected
 - [ ] Social verification bot layer (Telegram/X)
 
