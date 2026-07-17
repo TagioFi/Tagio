@@ -205,11 +205,14 @@ Lists the current user's pending bot-created requests:
   "unsigned_to": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
   "unsigned_data": "0xa9059cbb...",
   "unsigned_value": "0",
+  "tweet_url": "https://x.com/i/status/1234567890",
   "status": "pending",
   "created_at": "..."
 }]
 ```
 To sign one: call `sendTransaction` (viem/wagmi) with `{ to: unsigned_to, data: unsigned_data, value: unsigned_value }` directly — no ABI needed, it's already-encoded calldata. `token: "native"` rows have `unsigned_data: "0x"` (plain value transfer); `token: "usdg"` rows are ERC-20 `transfer()` calldata aimed at the USDG contract, not the recipient — that's expected, don't send value there.
+
+`tweet_url` links to the tweet that prompted the request (nice-to-have: show it as "requested from this post" on the pending-tx card) — it's `null` for DM-triggered requests, since there's no public tweet to point to.
 
 #### `POST /transactions/pending/:id/broadcast`
 After the user signs and the tx confirms, report it back:

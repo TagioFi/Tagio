@@ -12,6 +12,10 @@ export interface CreatePendingTransactionInput {
   token: BotToken;
   amount: string;
   unsignedTransfer: UnsignedTransfer;
+  // Link back to the tweet that prompted this request, so the user can see
+  // which of their posts triggered it. Only set for mention-triggered
+  // requests -- DMs have no public tweet to point to.
+  tweetUrl?: string;
 }
 
 // Returns null if this source_ref was already processed (idempotent against
@@ -24,8 +28,8 @@ export async function createPendingTransaction(
        requested_by_wallet, requested_by_x_user_id, source_ref,
        target_type, target_value, resolved_to_wallet,
        token, amount, amount_base_units,
-       unsigned_to, unsigned_data, unsigned_value
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       unsigned_to, unsigned_data, unsigned_value, tweet_url
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      ON CONFLICT (source_ref) DO NOTHING
      RETURNING id`,
     [
@@ -41,6 +45,7 @@ export async function createPendingTransaction(
       input.unsignedTransfer.to,
       input.unsignedTransfer.data,
       input.unsignedTransfer.value,
+      input.tweetUrl ?? null,
     ],
   );
   return rows.length === 0 ? null : { id: rows[0].id };

@@ -22,6 +22,7 @@ interface IncomingMessage {
   text: string;
   authorId: string;
   reply: (text: string) => Promise<void>;
+  tweetUrl?: string;
 }
 
 async function handleMessage(msg: IncomingMessage): Promise<void> {
@@ -61,6 +62,7 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
     token: command.token,
     amount: command.amount,
     unsignedTransfer,
+    tweetUrl: msg.tweetUrl,
   });
 
   if (created) {
@@ -81,6 +83,7 @@ export async function pollMentions(): Promise<void> {
       text: mention.text,
       authorId: mention.authorId,
       reply: (text) => replyToMention(mention.id, text),
+      tweetUrl: `https://x.com/i/status/${mention.id}`,
     });
   }
   await setCursor("mentions", ordered[ordered.length - 1].id);
