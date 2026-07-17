@@ -120,6 +120,16 @@ and mirrors `contracts/src/HashtagResolver.sol` — copy it into your wagmi/viem
 
 ## Endpoints
 
+### `GET /hashtags?owner=0x...`
+List hashtags owned by a wallet. Added specifically because the NFT isn't
+enumerable onchain, so this is the only way to answer "what handles does this
+wallet own" — no need for the localStorage-tracking workaround. Returns the same
+row shape as `GET /hashtags/:name` (`active` ones only), as an array.
+```json
+[{ "hashtag": "tagiopay", "owner_wallet": "0x...", "name": "TagioPay", "...": "..." }]
+```
+400 if `owner` is missing or not a valid `0x`-address.
+
 ### `GET /hashtags/check/:name`
 ```json
 { "available": true }
@@ -163,12 +173,53 @@ See "Core flow" above.
 [{ "signature": "0x...", "amount": "...", "token": "...", "is_native": true, "chain": "robinhood", "timestamp": "..." }]
 ```
 
-### `POST /auth/signin`
+### `POST /auth/signin` — now two-step, read the response shape carefully
 ```json
 { "walletAddress": "0x...", "signature": "0x...", "message": "Welcome to TagioPay! Please sign this message to verify your wallet ownership." }
 ```
-→ `{ "token": "<jwt>" }`. Send back as `Authorization: Bearer <token>` on any
-protected route added later.
+Two possible responses:
+- **Already linked**: `{ "token": "<jwt>", "xLinked": true, "xHandle": "..." }` — same as before, use the token immediately.
+- **Not linked yet**: `{ "needsXLink": true, "authorizeUrl": "https://x.com/i/oauth2/authorize?..." }` — **no token yet.** Redirect the browser (`window.location.href = authorizeUrl`, full-page redirect, not a fetch) to that URL. X handles auth, then redirects back to `${FRONTEND_URL}/auth/callback` on our backend, which itself redirects to **your** frontend at:
+  - Success: `/auth/callback#token=<jwt>` (fragment, not query string — read via `location.hash`, never sent to any server)
+  - Failure: `/auth/callback?error=<reason>`
+
+  You need an `/auth/callback` route that reads one or the other and finishes the login (store the token, or show the error). There's no separate "check if linked" endpoint — just re-attempt `/auth/signin` after the redirect completes and you'll get the token branch this time.
+
+### X-bot pending transactions (auth required — `Authorization: Bearer <token>`)
+
+Background: our X bot lets users message it ("send 5 usdg to @friend") to request a
+transfer. The bot never signs anything — it resolves the request and stores an
+**unsigned** transaction, which the requesting user must review and sign themselves
+in the dashboard with their own connected wallet.
+
+#### `GET /transactions/pending`
+Lists the current user's pending bot-created requests:
+```json
+[{
+  "id": 1,
+  "target_type": "x_account",
+  "target_value": "friend",
+  "resolved_to_wallet": "0x...",
+  "token": "usdg",
+  "amount": "5",
+  "unsigned_to": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
+  "unsigned_data": "0xa9059cbb...",
+  "unsigned_value": "0",
+  "status": "pending",
+  "created_at": "..."
+}]
+```
+To sign one: call `sendTransaction` (viem/wagmi) with `{ to: unsigned_to, data: unsigned_data, value: unsigned_value }` directly — no ABI needed, it's already-encoded calldata. `token: "native"` rows have `unsigned_data: "0x"` (plain value transfer); `token: "usdg"` rows are ERC-20 `transfer()` calldata aimed at the USDG contract, not the recipient — that's expected, don't send value there.
+
+#### `POST /transactions/pending/:id/broadcast`
+After the user signs and the tx confirms, report it back:
+```json
+{ "tx_hash": "0x..." }
+```
+Backend verifies the receipt succeeded onchain before marking it done. 409 if it's not still `pending` (already broadcast/cancelled), 400 if the tx reverted.
+
+#### `POST /transactions/pending/:id/cancel`
+No body. Lets the user dismiss a request without signing it.
 
 ---
 

@@ -1,9 +1,6 @@
-import Redis from "ioredis";
-import { config } from "../config";
+import { redis } from "../lib/redisClient";
 
 const RESOLVE_TTL_SECONDS = 60;
-
-const redis = config.redisUrl ? new Redis(config.redisUrl) : null;
 
 // In-process fallback so resolution caching still works with no Redis configured
 // (e.g. local dev, or a single-instance deploy). Lost on restart, not shared

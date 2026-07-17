@@ -5,7 +5,9 @@ import healthRoutes from "./routes/health";
 import hashtagRoutes from "./routes/hashtags";
 import resolveRoutes from "./routes/resolve";
 import transactionRoutes from "./routes/transactions";
+import pendingTransactionRoutes from "./routes/pendingTransactions";
 import authRoutes from "./routes/auth";
+import xAuthCallbackRoutes from "./routes/xAuthCallback";
 import { errorHandler } from "./middleware/errorHandler";
 
 export const app = express();
@@ -17,6 +19,8 @@ app.use(healthRoutes);
 app.use(hashtagRoutes);
 app.use(resolveRoutes);
 app.use(transactionRoutes);
+app.use(pendingTransactionRoutes);
 app.use(authRoutes);
+app.use(xAuthCallbackRoutes);
 
 app.use(errorHandler);

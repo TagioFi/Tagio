@@ -23,6 +23,28 @@ router.get("/hashtags/check/:name", async (req, res, next) => {
   }
 });
 
+const WALLET_ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
+
+// The NFT contract isn't enumerable, so "which hashtags does this wallet own" has
+// no onchain answer — this is the reverse-lookup our own Postgres index can serve.
+router.get("/hashtags", async (req, res, next) => {
+  try {
+    const owner = req.query.owner;
+    if (typeof owner !== "string" || !WALLET_ADDRESS_PATTERN.test(owner)) {
+      res.status(400).json({ error: "owner query param must be a valid wallet address" });
+      return;
+    }
+
+    const { rows } = await pool.query(
+      "SELECT * FROM hashtags WHERE owner_wallet = $1 AND active = true ORDER BY registered_at DESC",
+      [owner],
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/hashtags/:name", async (req, res, next) => {
   try {
     const hashtag = normalizeHashtag(req.params.name);

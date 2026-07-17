@@ -11,9 +11,21 @@ export const config = {
     resolverAddress: (process.env.ROBINHOOD_RESOLVER_ADDRESS ?? "") as `0x${string}`,
     nftAddress: (process.env.ROBINHOOD_NFT_ADDRESS ?? "") as `0x${string}`,
     settlementTokenAddress: (process.env.ROBINHOOD_SETTLEMENT_TOKEN_ADDRESS ?? "") as `0x${string}`,
+    usdgAddress: (process.env.ROBINHOOD_USDG_ADDRESS ?? "") as `0x${string}`,
   },
 
   redisUrl: process.env.REDIS_URL ?? "",
 
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? "",
+
+  x: {
+    clientId: process.env.X_CLIENT_ID ?? "",
+    clientSecret: process.env.X_CLIENT_SECRET ?? "",
+    oauthRedirectUri: process.env.X_OAUTH_REDIRECT_URI ?? "",
+    // Seed values only -- the bot's live, rotating tokens are read from/written to
+    // the x_bot_token table after the first refresh. These just prime that row.
+    botAccessTokenSeed: process.env.X_ACCESS_TOKEN ?? "",
+    botRefreshTokenSeed: process.env.X_REFRESH_TOKEN ?? "",
+    botPollIntervalMs: parseInt(process.env.X_BOT_POLL_INTERVAL_MS ?? "30000", 10),
+  },
 };
