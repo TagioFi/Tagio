@@ -4,6 +4,7 @@
 .env.*.local
 backend/.env
 contracts/.env
+backend/.secrets/
 
 # Logs
 logs

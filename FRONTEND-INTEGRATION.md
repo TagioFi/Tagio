@@ -104,6 +104,12 @@ and mirrors `contracts/src/HashtagResolver.sol` — copy it into your wagmi/viem
   in whatever `settlementToken` currently is: `address(0)` means native Robinhood ETH
   (send exact fee as `msg.value`), a real ERC-20 address means approve + zero
   `msg.value`. Read `resolver.settlementToken()` before building the fee-payment step.
+  **Both fees are currently live: `resolver.registrationFee()` and
+  `resolver.renewalFee()` are each `540000000000000` wei (0.00054 ETH, targeting
+  ~$1 at the time this was set) — don't hardcode this, read it live from the
+  contract, since it's a flat wei amount the owner adjusts manually as ETH price
+  moves, not a live oracle peg. `msg.value` must match exactly or the tx reverts
+  (`IncorrectNativeFee`).**
 - **`receivePayment` (native) is always available**, regardless of what
   `settlementToken` is set to. `receiveTokenPayment` only works once `settlementToken`
   points at a real ERC-20 — it reverts `SettlementTokenNotSet` while native-only.
