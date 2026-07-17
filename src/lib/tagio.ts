@@ -142,15 +142,22 @@ export const confirmTransaction = createServerFn({ method: "POST" })
     return (await res.json()) as { synced: boolean };
   });
 
+// Auth is two-step: a verified wallet signature alone isn't enough for a JWT
+// until the wallet also has a linked X account (see FRONTEND-INTEGRATION.md).
+// The backend returns one of these two shapes from the same 200 response.
+export type SignInResult =
+  | { token: string; xLinked: true; xHandle: string }
+  | { needsXLink: true; authorizeUrl: string };
+
 export const signIn = createServerFn({ method: "POST" })
   .validator(
     (input: { walletAddress: string; signature: string; message: string }) => input,
   )
-  .handler(async ({ data }): Promise<{ token: string }> => {
+  .handler(async ({ data }): Promise<SignInResult> => {
     const res = await apiFetch("/auth/signin", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(data),
     });
-    return (await res.json()) as { token: string };
+    return (await res.json()) as SignInResult;
   });

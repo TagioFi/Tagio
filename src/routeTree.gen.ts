@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HNameRouteImport } from './routes/h.$name'
+import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
@@ -28,34 +29,43 @@ const HNameRoute = HNameRouteImport.update({
   path: '/h/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCallbackRoute = AuthCallbackRouteImport.update({
+  id: '/auth/callback',
+  path: '/auth/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/h/$name': typeof HNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/h/$name': typeof HNameRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/auth/callback': typeof AuthCallbackRoute
   '/h/$name': typeof HNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/h/$name'
+  fullPaths: '/' | '/dashboard' | '/auth/callback' | '/h/$name'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/h/$name'
-  id: '__root__' | '/' | '/dashboard' | '/h/$name'
+  to: '/' | '/dashboard' | '/auth/callback' | '/h/$name'
+  id: '__root__' | '/' | '/dashboard' | '/auth/callback' | '/h/$name'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
+  AuthCallbackRoute: typeof AuthCallbackRoute
   HNameRoute: typeof HNameRoute
 }
 
@@ -82,12 +92,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof HNameRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/callback': {
+      id: '/auth/callback'
+      path: '/auth/callback'
+      fullPath: '/auth/callback'
+      preLoaderRoute: typeof AuthCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
+  AuthCallbackRoute: AuthCallbackRoute,
   HNameRoute: HNameRoute,
 }
 export const routeTree = rootRouteImport

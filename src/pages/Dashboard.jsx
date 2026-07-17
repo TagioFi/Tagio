@@ -7,6 +7,7 @@ import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions } from
 import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
+import { signInWithWallet, getAuthToken } from '../lib/auth'
 
 /* ---------- icons ---------- */
 const I = {
@@ -439,11 +440,41 @@ function Send({ toast }) {
 }
 function WalletPanel() {
   const { isConnected } = useAccount()
+  // 'signed_out' | 'signing_in' | 'signed_in' -- reflects whether a TagioPay
+  // JWT is already stored, not just whether a wallet is connected. Auth is
+  // two-step (wallet signature + linked X account), so this button may
+  // redirect to X instead of completing immediately.
+  const [authState, setAuthState] = useState(() => (getAuthToken() ? 'signed_in' : 'signed_out'))
+  const [authError, setAuthError] = useState('')
+
+  const handleSignIn = async () => {
+    setAuthState('signing_in')
+    setAuthError('')
+    try {
+      const result = await signInWithWallet()
+      if (result.status === 'signed_in') setAuthState('signed_in')
+      // 'redirecting_to_x' means the browser is already navigating away.
+    } catch (err) {
+      setAuthState('signed_out')
+      setAuthError(friendlyError(err))
+    }
+  }
+
   return (
     <div className="card pad-lg">
       <div className="eyebrow" style={{ marginBottom: '0.9rem' }}>Wallet</div>
       {isConnected ? (
-        <WalletControl variant="chip" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
+          <WalletControl variant="chip" />
+          {authState === 'signed_in' ? (
+            <div style={{ fontSize: '0.8rem', color: 'var(--green-deep)' }}>Signed in to TagioPay ✓</div>
+          ) : (
+            <button className="btn sm" onClick={handleSignIn} disabled={authState === 'signing_in'}>
+              {authState === 'signing_in' ? 'Signing in…' : 'Sign in to TagioPay'}
+            </button>
+          )}
+          {authError && <div className="status bad" style={{ fontSize: '0.8rem' }}>{authError}</div>}
+        </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
           <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>Connect a wallet on Robinhood Chain to send payments.</p>

@@ -24,7 +24,7 @@ import { normalizeHashtag, confirmTransaction } from "./tagio";
 import { wagmiConfig } from "./wagmi";
 
 /** Connects the injected wallet if needed and makes sure it's on Robinhood Chain. */
-async function ensureWallet(): Promise<`0x${string}`> {
+export async function ensureWallet(): Promise<`0x${string}`> {
   let account = getAccount(wagmiConfig);
   if (!account.isConnected) {
     // RainbowKit registers WalletConnect-based connectors too; only an injected
