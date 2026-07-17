@@ -50,12 +50,13 @@ export async function getBotUserId(): Promise<string> {
   return cachedBotUserId;
 }
 
-// NOTE: verified against X API v2 docs, not against a live account -- worth a
-// smoke test (mention/DM the bot for real) once credentials are live, since
-// this is the part of X's API that's changed shape the most over time.
+// Verified against a live account: X only includes author_id on a tweet object
+// when explicitly requested via tweet.fields -- without it, every mention's
+// authorId comes back undefined, and every mention silently fails the
+// "is this a linked user" check no matter who sent it.
 export async function listNewMentions(sinceId: string | null): Promise<XMention[]> {
   const botId = await getBotUserId();
-  const params = new URLSearchParams({ max_results: "20" });
+  const params = new URLSearchParams({ max_results: "20", "tweet.fields": "author_id" });
   if (sinceId) params.set("since_id", sinceId);
 
   const body = await authedFetch(`/users/${botId}/mentions?${params}`);
