@@ -9,9 +9,11 @@ import pendingTransactionRoutes from "./routes/pendingTransactions";
 import authRoutes from "./routes/auth";
 import xAuthCallbackRoutes from "./routes/xAuthCallback";
 import { errorHandler } from "./middleware/errorHandler";
+import { requestLogger } from "./middleware/requestLogger";
 
 export const app = express();
 
+app.use(requestLogger);
 app.use(cors({ origin: config.frontendUrl }));
 app.use(express.json());
 

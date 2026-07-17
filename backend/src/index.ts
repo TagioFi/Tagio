@@ -4,6 +4,7 @@ import { runMigrations } from "./db/migrate";
 import { config } from "./config";
 import { pollMentions, pollDirectMessages } from "./services/x/poller";
 import { XApiError } from "./services/x/botClient";
+import { log } from "./lib/logger";
 
 // 402 (credits/billing exhausted) and 429 (rate limited) mean "stop hitting this
 // endpoint for a while", not "retry immediately forever" -- the latter just spams
@@ -26,12 +27,14 @@ function startPollLoop(name: string, intervalMs: number, poll: () => Promise<voi
       .catch((err) => {
         if (err instanceof XApiError && (err.status === 402 || err.status === 429)) {
           pausedUntil = Date.now() + BACKOFF_MS;
-          console.error(
-            `X bot ${name} poll error (${err.status}): ${err.message} -- pausing ${name} for ${BACKOFF_MS / 60000}m`,
-          );
+          log.warn("x_bot_poll_backoff", {
+            stream: name,
+            status: err.status,
+            pausedForMinutes: BACKOFF_MS / 60000,
+          });
           return;
         }
-        console.error(`X bot ${name} poll error:`, err);
+        log.error("x_bot_poll_error", { stream: name, error: err instanceof Error ? err.message : String(err) });
       })
       .finally(() => {
         running = false;
@@ -41,11 +44,11 @@ function startPollLoop(name: string, intervalMs: number, poll: () => Promise<voi
 
 function startXBotPolling(): void {
   if (!config.x.botEnabled) {
-    console.log("X bot polling disabled via X_BOT_ENABLED=false");
+    log.info("x_bot_disabled", { reason: "X_BOT_ENABLED=false" });
     return;
   }
   if (!config.x.clientId) {
-    console.log("X bot polling disabled: X_CLIENT_ID not configured");
+    log.info("x_bot_disabled", { reason: "X_CLIENT_ID not configured" });
     return;
   }
 

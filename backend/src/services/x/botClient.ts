@@ -1,6 +1,13 @@
 import { getValidBotAccessToken } from "./botTokenManager";
+import { log } from "../../lib/logger";
 
 const API_BASE = "https://api.x.com/2";
+
+// Warn once a stream is down to 20% of its per-15min budget, so a 429 can be
+// anticipated (and the poll interval reconsidered) before it actually happens --
+// mentions and DMs have wildly different limits (300/15min vs 15/15min), so this
+// is the only reliable early signal for either.
+const RATE_LIMIT_WARN_THRESHOLD = 0.2;
 
 export class XApiError extends Error {
   constructor(
@@ -25,6 +32,22 @@ export interface XDirectMessage {
   dmConversationId: string;
 }
 
+function checkRateLimitHeaders(path: string, res: Response): void {
+  const limit = Number(res.headers.get("x-rate-limit-limit"));
+  const remaining = Number(res.headers.get("x-rate-limit-remaining"));
+  const reset = res.headers.get("x-rate-limit-reset");
+  if (!limit || Number.isNaN(remaining)) return; // header absent on this endpoint
+
+  if (remaining / limit <= RATE_LIMIT_WARN_THRESHOLD) {
+    log.warn("x_api_rate_limit_low", {
+      path,
+      remaining,
+      limit,
+      resetAt: reset ? new Date(Number(reset) * 1000).toISOString() : undefined,
+    });
+  }
+}
+
 async function authedFetch(path: string, init?: RequestInit): Promise<any> {
   const accessToken = await getValidBotAccessToken();
   const res = await fetch(`${API_BASE}${path}`, {
@@ -35,8 +58,13 @@ async function authedFetch(path: string, init?: RequestInit): Promise<any> {
       "Content-Type": "application/json",
     },
   });
+
+  checkRateLimitHeaders(path, res);
+
   if (!res.ok) {
-    throw new XApiError(res.status, `X API ${path} failed: ${res.status} ${await res.text()}`);
+    const body = await res.text();
+    log.error("x_api_call_failed", { path, status: res.status });
+    throw new XApiError(res.status, `X API ${path} failed: ${res.status} ${body}`);
   }
   return res.json();
 }
