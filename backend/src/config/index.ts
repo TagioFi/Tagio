@@ -27,5 +27,9 @@ export const config = {
     botAccessTokenSeed: process.env.X_ACCESS_TOKEN ?? "",
     botRefreshTokenSeed: process.env.X_REFRESH_TOKEN ?? "",
     botPollIntervalMs: parseInt(process.env.X_BOT_POLL_INTERVAL_MS ?? "180000", 10),
+    // Auxiliary on/off switch, independent of the credentials -- defaults to "on"
+    // so this doesn't silently disable an already-running bot on redeploy; set
+    // to "false" to pause polling (and its API spend) without touching X config.
+    botEnabled: (process.env.X_BOT_ENABLED ?? "true") !== "false",
   },
 };

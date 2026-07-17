@@ -11,6 +11,10 @@ import { XApiError } from "./services/x/botClient";
 const BACKOFF_MS = 30 * 60 * 1000;
 
 function startXBotPolling(): void {
+  if (!config.x.botEnabled) {
+    console.log("X bot polling disabled via X_BOT_ENABLED=false");
+    return;
+  }
   if (!config.x.clientId) {
     console.log("X bot polling disabled: X_CLIENT_ID not configured");
     return;
