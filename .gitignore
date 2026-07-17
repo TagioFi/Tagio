@@ -26,6 +26,13 @@ dist-ssr
 bun.lockb
 tsconfig.tsbuildinfo
 
+# This repo standardizes on bun.lock. A committed package-lock.json makes
+# Vercel auto-detect npm instead of Bun, and npm resolves some optional peer
+# deps (e.g. RainbowKit -> @coinbase/cdp-sdk -> @x402/evm) differently than
+# Bun does, which broke the SSR/nitro build with a missing-export error that
+# doesn't reproduce under Bun at all.
+package-lock.json
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
