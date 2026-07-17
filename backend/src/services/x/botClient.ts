@@ -2,6 +2,16 @@ import { getValidBotAccessToken } from "./botTokenManager";
 
 const API_BASE = "https://api.x.com/2";
 
+export class XApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "XApiError";
+  }
+}
+
 export interface XMention {
   id: string;
   text: string;
@@ -26,7 +36,7 @@ async function authedFetch(path: string, init?: RequestInit): Promise<any> {
     },
   });
   if (!res.ok) {
-    throw new Error(`X API ${path} failed: ${res.status} ${await res.text()}`);
+    throw new XApiError(res.status, `X API ${path} failed: ${res.status} ${await res.text()}`);
   }
   return res.json();
 }
