@@ -26,10 +26,15 @@ export const config = {
     // the x_bot_token table after the first refresh. These just prime that row.
     botAccessTokenSeed: process.env.X_ACCESS_TOKEN ?? "",
     botRefreshTokenSeed: process.env.X_REFRESH_TOKEN ?? "",
-    // Polling frequency doesn't meaningfully affect X API cost for the endpoints
-    // this bot uses (since_id makes empty mention-polls free, DM events dedupe
-    // within a 24h UTC window) -- it only affects reply latency. Tune for UX.
-    botPollIntervalMs: parseInt(process.env.X_BOT_POLL_INTERVAL_MS ?? "30000", 10),
+    // Mentions and DMs have very different X API rate limits (300/15min vs
+    // 15/15min for GET /2/dm_events -- a 20x gap) and must poll on separate
+    // intervals or the DM budget gets blown almost immediately. 30s for mentions
+    // uses only 10% of its budget; 90s for DMs uses ~67% of its much tighter one,
+    // leaving margin. Polling frequency doesn't meaningfully affect billing for
+    // either (since_id makes empty mention-polls free, DM events dedupe within a
+    // 24h UTC window) -- these are rate-limit-driven defaults, not cost-driven.
+    mentionsPollIntervalMs: parseInt(process.env.X_BOT_MENTIONS_POLL_INTERVAL_MS ?? "30000", 10),
+    dmPollIntervalMs: parseInt(process.env.X_BOT_DM_POLL_INTERVAL_MS ?? "90000", 10),
     // Auxiliary on/off switch, independent of the credentials -- defaults to "on"
     // so this doesn't silently disable an already-running bot on redeploy; set
     // to "false" to pause polling (and its API spend) without touching X config.

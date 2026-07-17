@@ -89,8 +89,3 @@ export async function pollDirectMessages(): Promise<void> {
   }
   await setCursor("dms", unseen[unseen.length - 1].id);
 }
-
-export async function pollXBot(): Promise<void> {
-  await pollMentions();
-  await pollDirectMessages();
-}
