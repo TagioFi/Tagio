@@ -61,6 +61,30 @@ export const hashtagResolverAbi = [
     outputs: [{ name: "", type: "address" }],
   },
   {
+    type: "function",
+    name: "settlementToken",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "receivePayment",
+    stateMutability: "payable",
+    inputs: [{ name: "hashtag", type: "string" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "receiveTokenPayment",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "hashtag", type: "string" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
     type: "event",
     name: "HashtagRegistered",
     inputs: [

@@ -2,7 +2,7 @@ import { listNewMentions, listRecentDirectMessages, replyToMention, replyToDirec
 import { getCursor, setCursor } from "./botCursor";
 import { parseCommand } from "./commandParser";
 import { resolveTargetWallet } from "./targetResolver";
-import { buildUnsignedTransfer } from "./txBuilder";
+import { buildUnsignedTransfer, buildUnsignedHashtagPayment } from "./txBuilder";
 import { getWalletByXUserId } from "./xAccountService";
 import { createPendingTransaction } from "./pendingTransactionService";
 
@@ -14,6 +14,8 @@ import { createPendingTransaction } from "./pendingTransactionService";
 const REPLY_CREATED = "Transaction created — tap the link in my bio to review and sign it in your dashboard.";
 const REPLY_TARGET_NOT_FOUND =
   "Couldn't find that hashtag, wallet, or linked X account — double check it and try again.";
+const REPLY_UNSUPPORTED_HASHTAG_TOKEN =
+  "That token isn't supported for hashtag payments yet — try ETH instead, or send directly to a wallet or linked account.";
 
 interface IncomingMessage {
   id: string;
@@ -35,7 +37,20 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
     return;
   }
 
-  const unsignedTransfer = buildUnsignedTransfer(command.token, resolvedWallet, command.amount);
+  // Hashtag targets route through the resolver's receivePayment/receiveTokenPayment
+  // so a bot-initiated payment respects that hashtag's payout splits exactly like
+  // a dapp-initiated one does. Wallet/X-account targets have no split concept, so
+  // they stay a plain transfer.
+  const unsignedTransfer =
+    command.targetType === "hashtag"
+      ? await buildUnsignedHashtagPayment(command.token, command.targetValue, command.amount)
+      : buildUnsignedTransfer(command.token, resolvedWallet, command.amount);
+
+  if (!unsignedTransfer) {
+    await msg.reply(REPLY_UNSUPPORTED_HASHTAG_TOKEN);
+    return;
+  }
+
   const created = await createPendingTransaction({
     requestedByWallet: requesterWallet,
     requestedByXUserId: msg.authorId,
