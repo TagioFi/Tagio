@@ -26,6 +26,6 @@ export const config = {
     // the x_bot_token table after the first refresh. These just prime that row.
     botAccessTokenSeed: process.env.X_ACCESS_TOKEN ?? "",
     botRefreshTokenSeed: process.env.X_REFRESH_TOKEN ?? "",
-    botPollIntervalMs: parseInt(process.env.X_BOT_POLL_INTERVAL_MS ?? "30000", 10),
+    botPollIntervalMs: parseInt(process.env.X_BOT_POLL_INTERVAL_MS ?? "180000", 10),
   },
 };
