@@ -15,6 +15,7 @@ import {
   getAccount,
   getConnectors,
   readContract,
+  sendTransaction,
   switchChain,
   waitForTransactionReceipt,
   writeContract,
@@ -215,6 +216,28 @@ export async function updateMetadataOnchain(input: {
   });
   await waitForReceiptOrThrow(hash);
   await syncWithBackend(hash, hashtag);
+  return hash;
+}
+
+/**
+ * Signs and broadcasts an already-built unsigned transaction -- e.g. one the
+ * X bot created after a "send X to Y" mention/DM. Plain to/data/value, no ABI
+ * needed since the calldata was already encoded server-side (see
+ * FRONTEND-INTEGRATION.md's pending-transactions section).
+ */
+export async function signPendingTransaction(input: {
+  to: `0x${string}`;
+  data: `0x${string}`;
+  value: string;
+}): Promise<Hash> {
+  await ensureWallet();
+  const hash = await sendTransaction(wagmiConfig, {
+    to: input.to,
+    data: input.data,
+    value: BigInt(input.value || "0"),
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(hash);
   return hash;
 }
 

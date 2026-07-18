@@ -3,8 +3,8 @@ import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { getAccount } from 'wagmi/actions'
-import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions } from '../lib/tagio'
-import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, friendlyError } from '../lib/resolver-actions'
+import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction } from '../lib/tagio'
+import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
 import { signInWithWallet, getAuthToken } from '../lib/auth'
@@ -23,6 +23,7 @@ const I = {
   bolt: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>,
   check: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12" /></svg>,
   x: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
+  clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></svg>,
   menu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
 }
 
@@ -554,11 +555,110 @@ function Activity() {
   )
 }
 
+// Requests created by the X bot (a mention/DM like "send 5 usdg to @friend")
+// land here as unsigned payloads -- the bot never signs anything itself. This
+// view is where the loop actually closes: list -> sign with the connected
+// wallet -> report the resulting tx_hash back so the backend can verify it
+// landed onchain before marking it done.
+function Pending({ toast }) {
+  const [rows, setRows] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [busyId, setBusyId] = useState(null)
+
+  const load = async () => {
+    const token = getAuthToken()
+    if (!token) { setRows([]); setLoading(false); return }
+    setLoading(true)
+    try {
+      setRows(await getPendingTransactions({ data: { token } }))
+    } catch {
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [])
+
+  const sign = async (row) => {
+    const token = getAuthToken()
+    setBusyId(row.id)
+    try {
+      const hash = await signPendingTransaction({
+        to: row.unsigned_to,
+        data: row.unsigned_data,
+        value: row.unsigned_value,
+      })
+      await broadcastPendingTransaction({ data: { token, id: row.id, txHash: hash } })
+      toast(`Sent · pending request #${row.id} settled onchain`)
+      load()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  const dismiss = async (row) => {
+    const token = getAuthToken()
+    setBusyId(row.id)
+    try {
+      await cancelPendingTransaction({ data: { token, id: row.id } })
+      toast(`Dismissed pending request #${row.id}`)
+      load()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  return (
+    <div className="fade-in">
+      <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
+        <div className="eyebrow" style={{ marginBottom: '0.4rem' }}>From the X bot</div>
+        <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', lineHeight: 1.5 }}>
+          Mention or DM <b>@TagioPayBot</b> — e.g. "send 0.001 eth to @handle", "send 5 usdg to #hashtag",
+          or "send 0.01 eth to 0x...". The bot never signs anything itself; each recognized request
+          shows up below for you to review and sign with your own wallet.
+        </p>
+      </div>
+      {loading ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>Loading pending requests…</p></div>
+      ) : rows.length === 0 ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No pending requests yet — send the bot a mention or DM to create one.</p></div>
+      ) : (
+        <div className="card pad-lg">
+          {rows.map((row) => (
+            <div key={row.id} className="act-row" style={{ gridTemplateColumns: '2rem 1fr auto', alignItems: 'center' }}>
+              <span className="act-ic in">{I.clock}</span>
+              <div>
+                <b style={{ fontWeight: 500 }}>
+                  {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → {row.target_type === 'hashtag' ? '#' : row.target_type === 'x_account' ? '@' : ''}{row.target_value}
+                </b>
+                <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>
+                  {fmtWhen(row.created_at)}
+                  {row.tweet_url && (<> · <a href={row.tweet_url} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)' }}>view tweet</a></>)}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="btn ghost sm" disabled={busyId === row.id} onClick={() => dismiss(row)}>Dismiss</button>
+                <button className="btn sm" disabled={busyId === row.id} onClick={() => sign(row)}>{busyId === row.id ? 'Signing…' : 'Sign & send'}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const ROUTES = [
   { id: 'overview', label: 'Overview', icon: I.grid },
   { id: 'handles', label: 'Handles', icon: I.hash },
   { id: 'resolver', label: 'Resolver', icon: I.split },
   { id: 'send', label: 'Send', icon: I.send },
+  { id: 'pending', label: 'Pending', icon: I.clock },
   { id: 'activity', label: 'Activity', icon: I.act },
 ]
 
@@ -696,6 +796,7 @@ export default function Dashboard() {
                   ? <Resolver key={handle.name} handle={handle} toast={toast} onSaved={refresh} />
                   : <div className="card pad-lg fade-in"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>{handlesQuery.isLoading ? 'Loading your handles…' : 'No handles to configure yet — claim one first.'}</p></div>)}
                 {view === 'send' && <Send toast={toast} />}
+                {view === 'pending' && <Pending toast={toast} />}
                 {view === 'activity' && <Activity />}
               </>
             )}

@@ -161,3 +161,50 @@ export const signIn = createServerFn({ method: "POST" })
     });
     return (await res.json()) as SignInResult;
   });
+
+/* ---------- pending transactions (created by the X bot, signed by the user) ---------- */
+
+export interface PendingTransaction {
+  id: number;
+  target_type: "hashtag" | "wallet" | "x_account";
+  target_value: string;
+  resolved_to_wallet: string;
+  token: "native" | "usdg";
+  amount: string;
+  unsigned_to: string;
+  unsigned_data: string;
+  unsigned_value: string;
+  tweet_url: string | null;
+  status: string;
+  created_at: string;
+}
+
+export const getPendingTransactions = createServerFn({ method: "GET" })
+  .validator((input: { token: string }) => input)
+  .handler(async ({ data }): Promise<PendingTransaction[]> => {
+    const res = await apiFetch("/transactions/pending", {
+      headers: { authorization: `Bearer ${data.token}` },
+    });
+    return (await res.json()) as PendingTransaction[];
+  });
+
+export const broadcastPendingTransaction = createServerFn({ method: "POST" })
+  .validator((input: { token: string; id: number; txHash: string }) => input)
+  .handler(async ({ data }): Promise<{ synced: boolean }> => {
+    const res = await apiFetch(`/transactions/pending/${data.id}/broadcast`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${data.token}` },
+      body: JSON.stringify({ tx_hash: data.txHash }),
+    });
+    return (await res.json()) as { synced: boolean };
+  });
+
+export const cancelPendingTransaction = createServerFn({ method: "POST" })
+  .validator((input: { token: string; id: number }) => input)
+  .handler(async ({ data }): Promise<{ cancelled: boolean }> => {
+    const res = await apiFetch(`/transactions/pending/${data.id}/cancel`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${data.token}` },
+    });
+    return (await res.json()) as { cancelled: boolean };
+  });
