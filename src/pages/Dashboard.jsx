@@ -760,6 +760,7 @@ export default function Dashboard() {
     handles: ['Handles', 'The names you own on Robinhood Chain'],
     resolver: ['Resolver', handle ? `Routing & identity for @${handle.name}` : 'Routing & identity'],
     send: ['Send', 'Pay anyone by their handle'],
+    pending: ['Pending', 'Requests from the X bot, waiting on your signature'],
     activity: ['Activity', 'Indexed onchain payments per hashtag'],
   }
 
