@@ -440,25 +440,10 @@ function Send({ toast }) {
 }
 function WalletPanel() {
   const { isConnected } = useAccount()
-  // 'signed_out' | 'signing_in' | 'signed_in' -- reflects whether a TagioPay
-  // JWT is already stored, not just whether a wallet is connected. Auth is
-  // two-step (wallet signature + linked X account), so this button may
-  // redirect to X instead of completing immediately.
-  const [authState, setAuthState] = useState(() => (getAuthToken() ? 'signed_in' : 'signed_out'))
-  const [authError, setAuthError] = useState('')
-
-  const handleSignIn = async () => {
-    setAuthState('signing_in')
-    setAuthError('')
-    try {
-      const result = await signInWithWallet()
-      if (result.status === 'signed_in') setAuthState('signed_in')
-      // 'redirecting_to_x' means the browser is already navigating away.
-    } catch (err) {
-      setAuthState('signed_out')
-      setAuthError(friendlyError(err))
-    }
-  }
+  // Sign-in itself is triggered automatically at the Dashboard level (see
+  // AuthGate) the moment a wallet connects -- this panel just reflects the
+  // outcome, it never triggers anything itself.
+  const signedIn = Boolean(getAuthToken())
 
   return (
     <div className="card pad-lg">
@@ -466,14 +451,7 @@ function WalletPanel() {
       {isConnected ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
           <WalletControl variant="chip" />
-          {authState === 'signed_in' ? (
-            <div style={{ fontSize: '0.8rem', color: 'var(--green-deep)' }}>Signed in to TagioPay ✓</div>
-          ) : (
-            <button className="btn sm" onClick={handleSignIn} disabled={authState === 'signing_in'}>
-              {authState === 'signing_in' ? 'Signing in…' : 'Sign in to TagioPay'}
-            </button>
-          )}
-          {authError && <div className="status bad" style={{ fontSize: '0.8rem' }}>{authError}</div>}
+          {signedIn && <div style={{ fontSize: '0.8rem', color: 'var(--green-deep)' }}>Signed in to TagioPay ✓</div>}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
@@ -482,6 +460,45 @@ function WalletPanel() {
         </div>
       )}
       <div style={{ marginTop: '1.25rem', padding: '1rem', background: 'rgba(200,232,96,0.10)', borderRadius: 'var(--radius-sm)', fontSize: '0.85rem', color: 'var(--green-deep)', lineHeight: 1.5 }}>Sends resolve the name, apply the on-chain split, and settle atomically. You never paste an address.</div>
+    </div>
+  )
+}
+
+// Blocking overlay shown while the two-step wallet+X sign-in is in flight or
+// failed. 'checking' covers both the signature prompt and the backend
+// round-trip; 'redirecting' is the brief moment before the browser navigates
+// to X (auth is two-step -- a linked X account is required before a JWT is
+// issued, see FRONTEND-INTEGRATION.md).
+function AuthGate({ status, error, onRetry }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 999,
+        background: 'rgba(4,23,13,0.72)',
+        backdropFilter: 'blur(4px)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '1rem',
+      }}
+    >
+      <div className="card pad-lg" style={{ maxWidth: 360, width: '100%', textAlign: 'center' }}>
+        {status === 'error' ? (
+          <>
+            <div style={{ marginBottom: '1rem', fontSize: '0.85rem', color: 'var(--danger)' }}>{error || 'Sign-in failed'}</div>
+            <button className="btn" onClick={onRetry} style={{ width: '100%', justifyContent: 'center' }}>Try again</button>
+          </>
+        ) : (
+          <>
+            <div className="auth-spinner" style={{ margin: '0 auto 1rem' }} />
+            <p style={{ fontSize: '0.9rem', color: 'var(--ink-soft)' }}>
+              {status === 'redirecting' ? 'Redirecting you to X to link your account…' : 'Checking for a linked X account…'}
+            </p>
+          </>
+        )}
+      </div>
     </div>
   )
 }
@@ -559,6 +576,37 @@ export default function Dashboard() {
     document.documentElement.style.fontSize = '16px'
     return () => { document.documentElement.style.fontSize = '' }
   }, [])
+
+  // Auth gate: the moment a wallet is connected (including an auto-reconnect
+  // on page load), automatically run the two-step wallet+X sign-in -- no
+  // manual button. 'idle' -> no wallet connected yet. 'checking' covers both
+  // the wallet-signature prompt and the backend round-trip. 'redirecting' is
+  // the brief window before the browser navigates to X. Skips straight to
+  // 'signed_in' if a valid-looking token is already stored, so this doesn't
+  // re-run every visit.
+  const [authStatus, setAuthStatus] = useState(() => (getAuthToken() ? 'signed_in' : 'idle'))
+  const [authError, setAuthError] = useState('')
+  const [authAttempt, setAuthAttempt] = useState(0)
+
+  useEffect(() => {
+    if (!address) { setAuthStatus('idle'); return }
+    if (getAuthToken()) { setAuthStatus('signed_in'); return }
+
+    let cancelled = false
+    setAuthStatus('checking')
+    setAuthError('')
+    signInWithWallet()
+      .then((result) => {
+        if (cancelled) return
+        setAuthStatus(result.status === 'signed_in' ? 'signed_in' : 'redirecting')
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setAuthStatus('error')
+        setAuthError(friendlyError(err))
+      })
+    return () => { cancelled = true }
+  }, [address, authAttempt])
 
   const handlesQuery = useQuery({
     queryKey: ['owned-handles', address],
@@ -655,6 +703,9 @@ export default function Dashboard() {
         </main>
         <div className="toasts">{toasts.map((t) => <div className="toast" key={t.id}><span className="dot"></span>{t.msg}</div>)}</div>
       </div>
+      {address && authStatus !== 'signed_in' && (
+        <AuthGate status={authStatus} error={authError} onRetry={() => setAuthAttempt((n) => n + 1)} />
+      )}
     </div>
   )
 }
