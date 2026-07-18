@@ -30,7 +30,7 @@ export async function createPendingTransaction(
        token, amount, amount_base_units,
        unsigned_to, unsigned_data, unsigned_value, tweet_url
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-     ON CONFLICT (source_ref) DO NOTHING
+     ON CONFLICT (source_ref) WHERE source_ref IS NOT NULL DO NOTHING
      RETURNING id`,
     [
       input.requestedByWallet,
