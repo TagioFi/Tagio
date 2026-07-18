@@ -207,7 +207,7 @@ export default function HashtagDetail({
           <div className="title">
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
               <h1>
-                <span style={{ color: "var(--green-mid)" }}>@</span>
+                <span style={{ color: "var(--green-mid)" }}>#</span>
                 {record.hashtag}
               </h1>
               <span className={"pill " + (exp.kind === "ok" ? "ok" : "warn")}>

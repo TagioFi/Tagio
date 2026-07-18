@@ -110,7 +110,7 @@ function HandleCard({ h, onManage, onRenew, renewing }) {
   return (
     <div className="card handle-card">
       <div className="top">
-        <span className="name"><span className="hash">@</span>{h.name}</span>
+        <span className="name"><span className="hash">#</span>{h.name}</span>
         <span className={'pill ' + (h.expiresDays < 7 ? 'warn' : 'ok')}>{h.expiresDays < 7 ? 'Renew soon' : 'Active'}</span>
       </div>
       <div className="meta">
@@ -172,7 +172,7 @@ function Overview({ handles, activity, loading, go, manage, renew, renewing }) {
           {activity.length === 0 && <p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No payments indexed for your handles yet.</p>}
           {activity.slice(0, 4).map((tx) => (
             <div key={tx.signature} className="route-line">
-              <div className="who"><b>@{tx.hashtag}</b><span className="addr-mono">{short(tx.signature)}</span></div>
+              <div className="who"><b>#{tx.hashtag}</b><span className="addr-mono">{short(tx.signature)}</span></div>
               <div className="amt" style={{ color: 'var(--green-deep)' }}>+{tx.is_native ? fmtNative(tx.amount) + ' ETH' : tx.amount + ' ' + short(tx.token)}</div>
             </div>
           ))}
@@ -211,7 +211,7 @@ function Claim({ toast, onRegistered }) {
       await registerOnchain({ hashtag: name, name })
       setReg({ status: 'done', name })
       setQ('')
-      toast(`@${name} registered onchain · 30-day subscription`)
+      toast(`#${name} registered onchain · 30-day subscription`)
       onRegistered?.(name)
     } catch (e) {
       setReg({ status: 'error', message: friendlyError(e) })
@@ -222,17 +222,17 @@ function Claim({ toast, onRegistered }) {
       <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Register a name</div>
       <h2 style={{ fontSize: '1.15rem', fontWeight: 500, marginBottom: '1rem' }}>Claim a new handle</h2>
       <div className="field">
-        <span className="hash">@</span>
+        <span className="hash">#</span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="yourname" spellCheck="false" />
         {state === 'taken' && <Link className="btn sm" to="/h/$name" params={{ name: norm }}>View record</Link>}
         {state === 'available' && <button className="btn sm" disabled={reg.status === 'busy'} onClick={doRegister}>{reg.status === 'busy' ? 'Confirm in wallet…' : 'Register'}</button>}
       </div>
       {reg.status === 'error' && <div className="status bad">{I.x} {reg.message}</div>}
-      {reg.status === 'done' && <div className="status ok">{I.check} @{reg.name} is yours · <Link to="/h/$name" params={{ name: reg.name }} style={{ color: 'var(--green-deep)', textDecoration: 'underline' }}>view record</Link></div>}
+      {reg.status === 'done' && <div className="status ok">{I.check} #{reg.name} is yours · <Link to="/h/$name" params={{ name: reg.name }} style={{ color: 'var(--green-deep)', textDecoration: 'underline' }}>view record</Link></div>}
       {state === 'invalid' && <div className="status bad">{I.x} 3–32 chars · lowercase letters, numbers, underscore only</div>}
       {state === 'checking' && <div className="status" style={{ color: 'var(--ink-faint)' }}>Checking availability…</div>}
-      {state === 'taken' && <div className="status bad">{I.x} @{norm} is already registered</div>}
-      {state === 'available' && reg.status === 'idle' && <div className="status ok">{I.check} @{norm} is available · registering mints the NFT to your wallet (30-day subscription)</div>}
+      {state === 'taken' && <div className="status bad">{I.x} #{norm} is already registered</div>}
+      {state === 'available' && reg.status === 'idle' && <div className="status ok">{I.check} #{norm} is available · registering mints the NFT to your wallet (30-day subscription)</div>}
       {state === 'error' && <div className="status bad">{I.x} Availability check failed — try again</div>}
       {state === 'idle' && reg.status === 'idle' && <div className="status" style={{ color: 'var(--ink-faint)' }}>Names are minted as on-chain, transferable records on Robinhood Chain.</div>}
     </div>
@@ -246,9 +246,9 @@ function ImportHandle({ address, toast, onImported }) {
     setBusy(true)
     try {
       const r = await getHashtag({ data: norm })
-      if (!r || !r.active) { toast(`@${norm} isn't registered`) }
-      else if (r.owner_wallet?.toLowerCase() !== address.toLowerCase()) { toast(`@${norm} is owned by ${short(r.owner_wallet)}, not your wallet`) }
-      else { addTracked(address, r.hashtag); setQ(''); toast(`@${r.hashtag} added to your handles`); onImported?.() }
+      if (!r || !r.active) { toast(`#${norm} isn't registered`) }
+      else if (r.owner_wallet?.toLowerCase() !== address.toLowerCase()) { toast(`#${norm} is owned by ${short(r.owner_wallet)}, not your wallet`) }
+      else { addTracked(address, r.hashtag); setQ(''); toast(`#${r.hashtag} added to your handles`); onImported?.() }
     } catch {
       toast('Lookup failed — try again')
     } finally {
@@ -259,7 +259,7 @@ function ImportHandle({ address, toast, onImported }) {
     <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
       <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Already own a handle?</div>
       <div className="field">
-        <span className="hash">@</span>
+        <span className="hash">#</span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="handle you own" spellCheck="false" onKeyDown={(e) => { if (e.key === 'Enter' && NAME_RE.test(norm)) doImport() }} />
         <button className="btn sm" disabled={!NAME_RE.test(norm) || busy} onClick={doImport}>{busy ? 'Checking…' : 'Import'}</button>
       </div>
@@ -318,7 +318,7 @@ function Resolver({ handle, toast, onSaved }) {
         })
       }
       setSave({ status: 'idle' })
-      toast(`Resolver config saved onchain for @${handle.name}`)
+      toast(`Resolver config saved onchain for #${handle.name}`)
       onSaved?.()
     } catch (e) {
       setSave({ status: 'error', message: friendlyError(e) })
@@ -364,7 +364,7 @@ function Resolver({ handle, toast, onSaved }) {
         </div>
         <div className="card pad-lg">
           <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Preview</div>
-          <div className="route-line"><span style={{ color: 'var(--ink-soft)' }}>Anyone sends to</span><b><span style={{ color: 'var(--green)' }}>@</span>{handle.name}</b></div>
+          <div className="route-line"><span style={{ color: 'var(--ink-soft)' }}>Anyone sends to</span><b><span style={{ color: 'var(--green)' }}>#</span>{handle.name}</b></div>
           <div className="route-line"><span style={{ color: 'var(--ink-soft)' }}>Resolves to</span><span>{splits.length} recipient{splits.length > 1 ? 's' : ''}</span></div>
           <div className="route-line"><span style={{ color: 'var(--ink-soft)' }}>Settles in</span><b>ETH (native)</b></div>
         </div>
@@ -386,7 +386,7 @@ function Send({ toast }) {
     setResolving(true)
     try {
       const r = await resolveHashtag({ data: norm })
-      setResolved(r || { error: '@' + norm + ' is not registered (or has expired) on Robinhood Chain' })
+      setResolved(r || { error: '#' + norm + ' is not registered (or has expired) on Robinhood Chain' })
     } catch {
       setResolved({ error: 'Resolution failed — check your connection and try again' })
     } finally {
@@ -398,7 +398,7 @@ function Send({ toast }) {
     try {
       await payOnchain({ hashtag: resolved.hashtag, amountEth: String(amt) })
       setPay({ status: 'done' })
-      toast(`Sent ${fmt(amt)} ETH to @${resolved.hashtag}`)
+      toast(`Sent ${fmt(amt)} ETH to #${resolved.hashtag}`)
     } catch (e) {
       setPay({ status: 'error', message: friendlyError(e) })
     }
@@ -411,8 +411,8 @@ function Send({ toast }) {
         <div className="form-row">
           <label className="field-label">To</label>
           <div style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--radius-sm)', padding: '0.35rem 0.35rem 0.35rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: 'var(--green)', fontSize: '1.1rem' }}>@</span>
-            <input value={to.replace(/^@/, '')} onChange={(e) => setTo(e.target.value)} placeholder="handle" spellCheck="false" style={{ flex: 1, border: 'none', outline: 'none', fontSize: '1rem', background: 'none' }} />
+            <span style={{ color: 'var(--green)', fontSize: '1.1rem' }}>#</span>
+            <input value={to.replace(/^[#@]/, '')} onChange={(e) => setTo(e.target.value)} placeholder="handle" spellCheck="false" style={{ flex: 1, border: 'none', outline: 'none', fontSize: '1rem', background: 'none' }} />
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)', marginTop: '0.4rem' }}>Any registered hashtag resolves to its live onchain routing.</div>
         </div>
@@ -421,7 +421,7 @@ function Send({ toast }) {
         {resolved && resolved.error && (<div className="split-total bad" style={{ marginTop: '1rem' }}>{resolved.error}</div>)}
         {resolved && !resolved.error && (
           <div className="send-preview">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}><span className="eyebrow">Resolved · live</span><span className="pill ok"><span className="dot"></span>@{resolved.hashtag}</span></div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}><span className="eyebrow">Resolved · live</span><span className="pill ok"><span className="dot"></span>#{resolved.hashtag}</span></div>
             <div className="route-line"><div className="who"><b>Primary destination</b></div><span className="addr-mono">{short(resolved.primaryDestination)}</span></div>
             {resolved.payouts.map((p, i) => (
               <div className="route-line" key={i}><div className="who"><b>Recipient {i + 1}</b><span className="addr-mono">{short(p.wallet)}</span></div><span className="amt">{fmt(amt * p.percentage_bps / 10000)} ETH <span style={{ color: 'var(--ink-faint)', fontWeight: 400, fontSize: '0.8rem' }}>· {(p.percentage_bps / 100).toFixed(1)}%</span></span></div>
@@ -431,7 +431,7 @@ function Send({ toast }) {
             )}
             {pay.status === 'error' && (<div className="split-total bad" style={{ marginTop: '0.75rem' }}>{pay.message}</div>)}
             {pay.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Payment settled onchain · indexed by the backend</div>)}
-            <Link className="btn ghost" to="/h/$name" params={{ name: resolved.hashtag }} style={{ justifyContent: 'center', width: '100%', marginTop: '0.75rem' }}>View @{resolved.hashtag} record <span className="circ">{I.chevron}</span></Link>
+            <Link className="btn ghost" to="/h/$name" params={{ name: resolved.hashtag }} style={{ justifyContent: 'center', width: '100%', marginTop: '0.75rem' }}>View #{resolved.hashtag} record <span className="circ">{I.chevron}</span></Link>
           </div>
         )}
       </div>
@@ -525,7 +525,7 @@ function Activity() {
       <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
         <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Onchain payments</div>
         <div className="field">
-          <span className="hash">@</span>
+          <span className="hash">#</span>
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="hashtag" spellCheck="false" onKeyDown={(e) => { if (e.key === 'Enter' && NAME_RE.test(norm)) lookup() }} />
           <button className="btn sm" disabled={!NAME_RE.test(norm) || state === 'loading'} onClick={lookup}>{state === 'loading' ? 'Loading…' : 'Look up'}</button>
         </div>
@@ -533,8 +533,8 @@ function Activity() {
       </div>
       {state === 'done' && (
         <div className="card pad-lg">
-          <div className="section-title"><h2>Payments to @{looked}</h2><Link className="btn ghost sm" to="/h/$name" params={{ name: looked }}>View record</Link></div>
-          {rows.length === 0 && <p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No payments indexed for @{looked} yet.</p>}
+          <div className="section-title"><h2>Payments to #{looked}</h2><Link className="btn ghost sm" to="/h/$name" params={{ name: looked }}>View record</Link></div>
+          {rows.length === 0 && <p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No payments indexed for #{looked} yet.</p>}
           {rows.length > 0 && (
             <div>
               <div className="act-row head"><span></span><span>Transaction</span><span className="hide-m">Chain</span><span className="right">Amount</span><span className="right hide-m">When</span></div>
@@ -746,7 +746,7 @@ export default function Dashboard() {
     setRenewing(n)
     try {
       await renewOnchain({ hashtag: n })
-      toast(`@${n} renewed onchain · +30 days`)
+      toast(`#${n} renewed onchain · +30 days`)
       refresh()
     } catch (e) {
       toast(friendlyError(e))
@@ -758,7 +758,7 @@ export default function Dashboard() {
   const titles = {
     overview: ['Overview', 'Your name-native money at a glance'],
     handles: ['Handles', 'The names you own on Robinhood Chain'],
-    resolver: ['Resolver', handle ? `Routing & identity for @${handle.name}` : 'Routing & identity'],
+    resolver: ['Resolver', handle ? `Routing & identity for #${handle.name}` : 'Routing & identity'],
     send: ['Send', 'Pay anyone by their handle'],
     pending: ['Pending', 'Requests from the X bot, waiting on your signature'],
     activity: ['Activity', 'Indexed onchain payments per hashtag'],
@@ -782,7 +782,7 @@ export default function Dashboard() {
               <div className="title"><h1>{titles[view][0]}</h1><p>{titles[view][1]}</p></div>
             </div>
             <div className="actions">
-              {view === 'resolver' && handles.length > 0 && (<div className="handle-select"><span style={{ color: 'var(--green)' }}>@</span><select value={handle?.name || ''} onChange={(e) => setSelected(e.target.value)}>{handles.map((h) => <option key={h.name} value={h.name}>{h.name}</option>)}</select></div>)}
+              {view === 'resolver' && handles.length > 0 && (<div className="handle-select"><span style={{ color: 'var(--green)' }}>#</span><select value={handle?.name || ''} onChange={(e) => setSelected(e.target.value)}>{handles.map((h) => <option key={h.name} value={h.name}>{h.name}</option>)}</select></div>)}
               <button className="btn" onClick={() => go('handles')}>Claim handle <span className="circ">{I.chevron}</span></button>
             </div>
           </div>

@@ -13,7 +13,7 @@ export const Route = createFileRoute("/h/$name")({
   },
   head: ({ loaderData }) => ({
     meta: [
-      { title: `@${loaderData?.record.hashtag ?? "hashtag"} — Tagio` },
+      { title: `#${loaderData?.record.hashtag ?? "hashtag"} — Tagio` },
       { name: "description", content: "Onchain hashtag record on Robinhood Chain." },
     ],
   }),
@@ -32,7 +32,7 @@ function NotRegistered() {
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
         <h1 className="text-xl font-semibold text-foreground">
-          @{name} isn't registered
+          #{name} isn't registered
         </h1>
         <p className="mt-2 text-sm text-muted-foreground">
           This hashtag has no active record on Robinhood Chain. It may be available to
