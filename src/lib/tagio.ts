@@ -230,6 +230,7 @@ export interface TokenInfo {
   symbol: string;
   address: string;
   native?: boolean;
+  decimals: number;
 }
 
 export interface SwapTokenList {
@@ -288,4 +289,21 @@ export const getSwapPlan = createServerFn({ method: "POST" })
     );
     if (res.status === 422) return null;
     return (await res.json()) as SwapPlan;
+  });
+
+/* ---------- wallet balances (ETH/USDG + held RWA stocks, for the wallet panel) ---------- */
+
+export interface WalletBalance {
+  symbol: string;
+  address: string;
+  native: boolean;
+  decimals: number;
+  balance: string; // base units
+}
+
+export const getWalletBalances = createServerFn({ method: "GET" })
+  .validator((input: { address: string }) => input)
+  .handler(async ({ data }): Promise<WalletBalance[]> => {
+    const res = await apiFetch(`/wallet/${data.address}/balances`);
+    return (await res.json()) as WalletBalance[];
   });

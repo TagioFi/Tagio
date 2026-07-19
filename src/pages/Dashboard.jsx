@@ -3,11 +3,32 @@ import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { getAccount } from 'wagmi/actions'
-import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan } from '../lib/tagio'
+import { formatUnits } from 'viem'
+import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances } from '../lib/tagio'
 import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, signAndConfirmSwapPlan, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
 import { signInWithWallet, getAuthToken } from '../lib/auth'
+
+// Served straight from /public -- no bundler import needed. COIN has no
+// icon yet; callers fall back to the plain "#" glyph for it.
+const TOKEN_ICONS = {
+  ETH: '/eth.png',
+  USDG: '/usdg.png',
+  AAPL: '/apple.png',
+  TSLA: '/tesla.png',
+  NVDA: '/nvidia.png',
+  GOOGL: '/google.png',
+  AMZN: '/amazon.png',
+  MSFT: '/microsoft.png',
+  META: '/meta.jpg',
+  SPCX: '/spacex.png',
+}
+function TokenIcon({ symbol, size = '1.2rem' }) {
+  const src = TOKEN_ICONS[symbol]
+  if (!src) return <span className="hash" style={{ width: size, height: size, fontSize: `calc(${size} * 0.7)` }}>#</span>
+  return <img src={src} alt="" style={{ width: size, height: size, borderRadius: '50%', objectFit: 'cover', flexShrink: 0 }} />
+}
 
 /* ---------- icons ---------- */
 const I = {
@@ -387,7 +408,10 @@ function Send({ toast }) {
           </div>
           <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)', marginTop: '0.4rem' }}>Any registered hashtag resolves to its live onchain routing.</div>
         </div>
-        <div className="form-row"><label className="field-label">Amount (native ETH)</label><input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" /></div>
+        <div className="form-row">
+          <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><TokenIcon symbol="ETH" size="1rem" /> Amount (native ETH)</label>
+          <input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+        </div>
         <button className="btn" disabled={!NAME_RE.test(norm) || amt <= 0 || resolving} onClick={resolve} style={{ justifyContent: 'center', width: '100%' }}>{resolving ? 'Resolving…' : 'Resolve'} <span className="circ">{I.chevron}</span></button>
         {resolved && resolved.error && (<div className="split-total bad" style={{ marginTop: '1rem' }}>{resolved.error}</div>)}
         {resolved && !resolved.error && (
@@ -410,20 +434,54 @@ function Send({ toast }) {
     </div>
   )
 }
+function fmtBalance(b) {
+  const n = Number(formatUnits(BigInt(b.balance), b.decimals))
+  return n.toLocaleString('en-US', { maximumFractionDigits: n < 1 ? 5 : 2 })
+}
+
 function WalletPanel() {
-  const { isConnected } = useAccount()
+  const { address, isConnected } = useAccount()
   // Sign-in itself is triggered automatically at the Dashboard level (see
   // AuthGate) the moment a wallet connects -- this panel just reflects the
   // outcome, it never triggers anything itself.
   const signedIn = Boolean(getAuthToken())
 
+  const balancesQuery = useQuery({
+    queryKey: ['wallet-balances', address],
+    enabled: Boolean(address),
+    queryFn: () => getWalletBalances({ data: { address } }),
+    refetchInterval: 30000,
+  })
+  const balances = balancesQuery.data || []
+  // ETH/USDG always shown for context; stocks only when actually held, so
+  // this doesn't turn into a wall of zero-balance tickers.
+  const shown = balances.filter((b) => b.native || b.symbol === 'USDG' || BigInt(b.balance) > 0n)
+
   return (
     <div className="card pad-lg">
       <div className="eyebrow" style={{ marginBottom: '0.9rem' }}>Wallet</div>
       {isConnected ? (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
-          <WalletControl variant="chip" />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start', width: '100%' }}>
+          <div className="wallet-chip-light" style={{ width: '100%' }}>
+            <WalletControl variant="chip" />
+          </div>
           {signedIn && <div style={{ fontSize: '0.8rem', color: 'var(--green-deep)' }}>Signed in to TagioPay ✓</div>}
+          <div style={{ width: '100%', marginTop: '0.25rem' }}>
+            <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Your assets on Robinhood</div>
+            {balancesQuery.isLoading ? (
+              <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>Loading balances…</p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
+                {shown.map((b) => (
+                  <div key={b.symbol} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                    <TokenIcon symbol={b.symbol} />
+                    <span style={{ fontSize: '0.85rem', color: 'var(--ink)' }}>{b.symbol}</span>
+                    <span style={{ marginLeft: 'auto', fontSize: '0.85rem', color: 'var(--ink-soft)' }} className="mono">{fmtBalance(b)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-start' }}>
@@ -478,7 +536,7 @@ function Trade({ toast }) {
   const { address } = useAccount()
   const [tokens, setTokens] = useState({ swapIn: [], stocks: [] })
   const [direction, setDirection] = useState('buy') // 'buy' | 'sell'
-  const [currency, setCurrency] = useState('ETH')
+  const [currency, setCurrency] = useState('USDG')
   const [stock, setStock] = useState('')
   const [amount, setAmount] = useState('')
   const [quote, setQuote] = useState(null)
@@ -545,16 +603,22 @@ function Trade({ toast }) {
         </div>
         <div className="form-row">
           <label className="field-label">{direction === 'buy' ? 'Pay with' : 'Receive'}</label>
-          <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-            <option value="ETH">ETH</option>
-            <option value="USDG">USDG</option>
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <TokenIcon symbol={currency} />
+            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+              <option value="ETH">ETH</option>
+              <option value="USDG">USDG</option>
+            </select>
+          </div>
         </div>
         <div className="form-row">
           <label className="field-label">{direction === 'buy' ? 'Buy' : 'Sell'}</label>
-          <select className="input" value={stock} onChange={(e) => setStock(e.target.value)}>
-            {tokens.stocks.map((t) => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
-          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <TokenIcon symbol={stock} />
+            <select className="input" value={stock} onChange={(e) => setStock(e.target.value)}>
+              {tokens.stocks.map((t) => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
+            </select>
+          </div>
         </div>
         <div className="form-row">
           <label className="field-label">Amount ({fromSymbol || '...'})</label>
@@ -566,7 +630,7 @@ function Trade({ toast }) {
         {quote && quote.error && (<div className="split-total bad" style={{ marginTop: '1rem' }}>No liquidity route for this pair yet.</div>)}
         {quote && !quote.error && (
           <div className="send-preview">
-            <div className="route-line"><div className="who"><b>You'll receive</b></div><span className="amt">≈ {fmt(Number(quote.amountOut))} {toSymbol}</span></div>
+            <div className="route-line"><div className="who"><b>You'll receive</b></div><span className="amt" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><TokenIcon symbol={toSymbol} size="1rem" /> ≈ {fmt(Number(quote.amountOut))} {toSymbol}</span></div>
             <div className="route-line"><div className="who"><b>Route</b></div><span style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>{quote.route}</span></div>
             {highImpact && (
               <div className="split-total bad" style={{ marginTop: '0.5rem' }}>

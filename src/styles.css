@@ -238,6 +238,13 @@ h1.headline .l2 .accent{ color:var(--green); }
 #app .wallet-chip .addr svg{ width:1.1rem; height:1.1rem; }
 #app .wallet-chip .bal{ font-size:1.1rem; font-weight:500; margin-top:0.35rem; }
 #app .wallet-chip .bal small{ font-size:0.75rem; color:rgba(255,255,255,0.55); font-weight:400; }
+/* .wallet-chip assumes the dark sidebar it was designed for -- the Send/Trade
+   wallet panel reuses the same component inside a light .card, where the
+   white-on-white text was unreadable. Override just that context. */
+#app .wallet-chip-light .wallet-chip{ border-color:var(--hairline); }
+#app .wallet-chip-light .wallet-chip .addr{ color:var(--ink); }
+#app .wallet-chip-light .wallet-chip .addr button{ color:var(--ink-faint); }
+#app .wallet-chip-light .wallet-chip .bal small{ color:var(--ink-faint); }
 #app .main{ flex:1; min-width:0; display:flex; flex-direction:column; }
 #app .topbar{ display:flex; align-items:center; justify-content:space-between; padding:1.5rem 2.25rem 0.5rem; }
 #app .topbar .title h1{ font-size:1.75rem; font-weight:500; letter-spacing:-0.01em; }
