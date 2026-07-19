@@ -1,10 +1,12 @@
 import { listNewMentions, listRecentDirectMessages, replyToMention, replyToDirectMessage } from "./botClient";
 import { getCursor, setCursor } from "./botCursor";
-import { parseCommand } from "./commandParser";
+import { parseCommand, parseSwapCommand } from "./commandParser";
 import { resolveTargetWallet } from "./targetResolver";
 import { buildUnsignedTransfer, buildUnsignedHashtagPayment } from "./txBuilder";
 import { getWalletByXUserId } from "./xAccountService";
-import { createPendingTransaction } from "./pendingTransactionService";
+import { createPendingTransaction, createPendingSwap } from "./pendingTransactionService";
+import { resolveToken } from "../../lib/rwaTokens";
+import { planSwap } from "../../lib/swapExecution";
 import { log } from "../../lib/logger";
 
 // No links in bot replies (by design -- the dapp link lives in the bot's bio
@@ -12,11 +14,14 @@ import { log } from "../../lib/logger";
 // linked TagioPay+X user. Both are pure noise-reduction: it keeps the bot from
 // burning reply-rate-limit budget on spam/non-users, and non-users get nothing
 // to latch onto for a reply-chain.
-const REPLY_CREATED = "Transaction created — tap the link in my bio to review and sign it in your dashboard.";
+const REPLY_CREATED = "Transaction created. Tap the link in my bio to review and sign it in your dashboard.";
 const REPLY_TARGET_NOT_FOUND =
-  "Couldn't find that hashtag, wallet, or linked X account — double check it and try again.";
+  "Couldn't find that hashtag, wallet, or linked X account. Double check it and try again.";
 const REPLY_UNSUPPORTED_HASHTAG_TOKEN =
-  "That token isn't supported for hashtag payments yet — try ETH instead, or send directly to a wallet or linked account.";
+  "That token isn't supported for hashtag payments yet. Try ETH instead, or send directly to a wallet or linked account.";
+const REPLY_SWAP_TOKEN_NOT_FOUND =
+  "Didn't recognize one of those tokens. Try a symbol like ETH, USDG, AAPL, NVDA, GOOGL, TSLA, AMZN, MSFT, META, COIN, or SPCX.";
+const REPLY_SWAP_NO_ROUTE = "No liquidity route for that pair yet. Try a different amount or pair.";
 
 interface IncomingMessage {
   id: string;
@@ -27,29 +32,12 @@ interface IncomingMessage {
   source: "mention" | "dm";
 }
 
-async function handleMessage(msg: IncomingMessage): Promise<void> {
-  // Base context attached to every decision log for this message so a single
-  // id/source can be grepped to see exactly what the bot did and why. Tweet
-  // text is public (it's a mention), so it's safe to include for debugging
-  // parse misses; DM text is private, so it's deliberately left out here.
-  const ctx = { source: msg.source, id: msg.id, authorId: msg.authorId };
-
-  const command = parseCommand(msg.text);
-  if (!command) {
-    log.info("x_bot_message_ignored", {
-      ...ctx,
-      reason: "unparseable",
-      textSnippet: msg.source === "mention" ? msg.text.slice(0, 80) : undefined,
-    });
-    return; // not a recognized command -- silently ignore, no reply
-  }
-
-  const requesterWallet = await getWalletByXUserId(msg.authorId);
-  if (!requesterWallet) {
-    log.info("x_bot_message_ignored", { ...ctx, reason: "sender_not_linked" });
-    return; // not a linked TagioPay user -- silently ignore, no reply
-  }
-
+async function handlePaymentCommand(
+  msg: IncomingMessage,
+  ctx: Record<string, unknown>,
+  requesterWallet: `0x${string}`,
+  command: NonNullable<ReturnType<typeof parseCommand>>,
+): Promise<void> {
   const resolvedWallet = await resolveTargetWallet(command);
   if (!resolvedWallet) {
     log.info("x_bot_message_declined", {
@@ -103,6 +91,102 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
     await msg.reply(REPLY_CREATED);
   } else {
     log.info("x_bot_message_ignored", { ...ctx, reason: "duplicate_source_ref" });
+  }
+}
+
+async function handleSwapCommand(
+  msg: IncomingMessage,
+  ctx: Record<string, unknown>,
+  requesterWallet: `0x${string}`,
+  swapCommand: NonNullable<ReturnType<typeof parseSwapCommand>>,
+): Promise<void> {
+  const [tokenIn, tokenOut] = await Promise.all([
+    resolveToken(swapCommand.fromSymbol),
+    resolveToken(swapCommand.toSymbol),
+  ]);
+  if (!tokenIn || !tokenOut || tokenIn.address === tokenOut.address) {
+    log.info("x_bot_message_declined", {
+      ...ctx,
+      reason: "swap_token_not_found",
+      fromSymbol: swapCommand.fromSymbol,
+      toSymbol: swapCommand.toSymbol,
+    });
+    await msg.reply(REPLY_SWAP_TOKEN_NOT_FOUND);
+    return;
+  }
+
+  const plan = await planSwap(swapCommand.fromSymbol, swapCommand.toSymbol, Number(swapCommand.amount), requesterWallet);
+  if (!plan) {
+    log.info("x_bot_message_declined", {
+      ...ctx,
+      reason: "swap_no_route",
+      fromSymbol: swapCommand.fromSymbol,
+      toSymbol: swapCommand.toSymbol,
+    });
+    await msg.reply(REPLY_SWAP_NO_ROUTE);
+    return;
+  }
+
+  const created = await createPendingSwap({
+    requestedByWallet: requesterWallet,
+    requestedByXUserId: msg.authorId,
+    sourceRef: msg.id,
+    fromSymbol: swapCommand.fromSymbol,
+    toSymbol: swapCommand.toSymbol,
+    amount: swapCommand.amount,
+    amountInBaseUnits: plan.amountInBaseUnits,
+    approvals: plan.approvals,
+    swap: plan.swap,
+    route: plan.quote.route,
+    priceImpactPct: plan.quote.priceImpactPct,
+    tweetUrl: msg.tweetUrl,
+  });
+
+  if (created) {
+    log.info("x_bot_pending_swap_created", {
+      ...ctx,
+      pendingTransactionId: created.id,
+      fromSymbol: swapCommand.fromSymbol,
+      toSymbol: swapCommand.toSymbol,
+      amount: swapCommand.amount,
+      route: plan.quote.route,
+      priceImpactPct: plan.quote.priceImpactPct,
+      requesterWallet,
+    });
+    await msg.reply(REPLY_CREATED);
+  } else {
+    log.info("x_bot_message_ignored", { ...ctx, reason: "duplicate_source_ref" });
+  }
+}
+
+async function handleMessage(msg: IncomingMessage): Promise<void> {
+  // Base context attached to every decision log for this message so a single
+  // id/source can be grepped to see exactly what the bot did and why. Tweet
+  // text is public (it's a mention), so it's safe to include for debugging
+  // parse misses; DM text is private, so it's deliberately left out here.
+  const ctx = { source: msg.source, id: msg.id, authorId: msg.authorId };
+
+  const command = parseCommand(msg.text);
+  const swapCommand = command ? null : parseSwapCommand(msg.text);
+  if (!command && !swapCommand) {
+    log.info("x_bot_message_ignored", {
+      ...ctx,
+      reason: "unparseable",
+      textSnippet: msg.source === "mention" ? msg.text.slice(0, 80) : undefined,
+    });
+    return; // not a recognized command -- silently ignore, no reply
+  }
+
+  const requesterWallet = await getWalletByXUserId(msg.authorId);
+  if (!requesterWallet) {
+    log.info("x_bot_message_ignored", { ...ctx, reason: "sender_not_linked" });
+    return; // not a linked TagioPay user -- silently ignore, no reply
+  }
+
+  if (command) {
+    await handlePaymentCommand(msg, ctx, requesterWallet as `0x${string}`, command);
+  } else {
+    await handleSwapCommand(msg, ctx, requesterWallet as `0x${string}`, swapCommand!);
   }
 }
 

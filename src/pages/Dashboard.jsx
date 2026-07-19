@@ -3,8 +3,8 @@ import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { getAccount } from 'wagmi/actions'
-import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction } from '../lib/tagio'
-import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, friendlyError } from '../lib/resolver-actions'
+import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan } from '../lib/tagio'
+import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, signAndConfirmSwapPlan, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
 import { signInWithWallet, getAuthToken } from '../lib/auth'
@@ -25,6 +25,7 @@ const I = {
   x: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>,
   clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></svg>,
   menu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
+  trade: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17l6-6 4 4 8-8" /><path d="M17 7h4v4" /></svg>,
 }
 
 /* ---------- helpers ---------- */
@@ -473,6 +474,119 @@ function AuthGate({ status, error, onRetry }) {
     </div>
   )
 }
+function Trade({ toast }) {
+  const { address } = useAccount()
+  const [tokens, setTokens] = useState({ swapIn: [], stocks: [] })
+  const [direction, setDirection] = useState('buy') // 'buy' | 'sell'
+  const [currency, setCurrency] = useState('ETH')
+  const [stock, setStock] = useState('')
+  const [amount, setAmount] = useState('')
+  const [quote, setQuote] = useState(null)
+  const [quoting, setQuoting] = useState(false)
+  const [trade, setTrade] = useState({ status: 'idle' }) // idle | planning | approving | signing | done | error
+
+  useEffect(() => { getSwapTokens().then(setTokens).catch(() => {}) }, [])
+  useEffect(() => { if (tokens.stocks.length > 0 && !stock) setStock(tokens.stocks[0].symbol) }, [tokens, stock])
+  useEffect(() => { setQuote(null); setTrade({ status: 'idle' }) }, [direction, currency, stock, amount])
+
+  const fromSymbol = direction === 'buy' ? currency : stock
+  const toSymbol = direction === 'buy' ? stock : currency
+  const amt = parseFloat(amount) || 0
+  // abs(), not just > 3: on a very thin pool the reference (1-unit) quote
+  // itself can be distorted enough to swing priceImpactPct sharply negative
+  // (confirmed live -- a thin TSLA pool briefly quoted -762%) rather than
+  // near zero. That's not "a great deal," it's the metric breaking down on
+  // low depth -- exactly the situation this warning exists to catch.
+  const highImpact = quote && Math.abs(quote.priceImpactPct) > 3
+
+  const getQuote = async () => {
+    setQuoting(true)
+    try {
+      const q = await getSwapQuote({ data: { fromSymbol, toSymbol, amountIn: amt } })
+      setQuote(q || { error: true })
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setQuoting(false)
+    }
+  }
+
+  const doSwap = async () => {
+    setTrade({ status: 'planning' })
+    try {
+      const plan = await getSwapPlan({ data: { fromSymbol, toSymbol, amountIn: amt, walletAddress: address } })
+      if (!plan) {
+        setTrade({ status: 'error', message: 'No liquidity route for this pair yet' })
+        return
+      }
+      setTrade({ status: plan.approvals.length > 0 ? 'approving' : 'signing' })
+      await signAndConfirmSwapPlan(plan)
+      setTrade({ status: 'done' })
+      toast(`Swapped ${fmt(amt)} ${fromSymbol} for ${toSymbol}`)
+    } catch (e) {
+      setTrade({ status: 'error', message: friendlyError(e) })
+    }
+  }
+
+  const busy = trade.status === 'planning' || trade.status === 'approving' || trade.status === 'signing'
+  const tradeLabel =
+    trade.status === 'planning' ? 'Building trade…'
+    : trade.status === 'approving' ? 'Confirm approval in wallet…'
+    : trade.status === 'signing' ? 'Confirm swap in wallet…'
+    : 'Swap'
+
+  return (
+    <div className="grid two fade-in" style={{ alignItems: 'start' }}>
+      <div className="card pad-lg">
+        <div className="eyebrow" style={{ marginBottom: '0.75rem' }}>Trade RWA stocks</div>
+        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+          <button className={'btn sm' + (direction === 'buy' ? '' : ' ghost')} onClick={() => setDirection('buy')}>Buy</button>
+          <button className={'btn sm' + (direction === 'sell' ? '' : ' ghost')} onClick={() => setDirection('sell')}>Sell</button>
+        </div>
+        <div className="form-row">
+          <label className="field-label">{direction === 'buy' ? 'Pay with' : 'Receive'}</label>
+          <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
+            <option value="ETH">ETH</option>
+            <option value="USDG">USDG</option>
+          </select>
+        </div>
+        <div className="form-row">
+          <label className="field-label">{direction === 'buy' ? 'Buy' : 'Sell'}</label>
+          <select className="input" value={stock} onChange={(e) => setStock(e.target.value)}>
+            {tokens.stocks.map((t) => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
+          </select>
+        </div>
+        <div className="form-row">
+          <label className="field-label">Amount ({fromSymbol || '...'})</label>
+          <input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
+        </div>
+        <button className="btn" disabled={amt <= 0 || !stock || quoting} onClick={getQuote} style={{ justifyContent: 'center', width: '100%' }}>
+          {quoting ? 'Getting quote…' : 'Get quote'} <span className="circ">{I.chevron}</span>
+        </button>
+        {quote && quote.error && (<div className="split-total bad" style={{ marginTop: '1rem' }}>No liquidity route for this pair yet.</div>)}
+        {quote && !quote.error && (
+          <div className="send-preview">
+            <div className="route-line"><div className="who"><b>You'll receive</b></div><span className="amt">≈ {fmt(Number(quote.amountOut))} {toSymbol}</span></div>
+            <div className="route-line"><div className="who"><b>Route</b></div><span style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>{quote.route}</span></div>
+            {highImpact && (
+              <div className="split-total bad" style={{ marginTop: '0.5rem' }}>
+                High price impact (~{Math.abs(quote.priceImpactPct).toFixed(2)}%) — this pool has limited liquidity, the actual fill may differ from this quote.
+              </div>
+            )}
+            {trade.status !== 'done' && (
+              <button className="btn" disabled={busy} onClick={doSwap} style={{ justifyContent: 'center', width: '100%', marginTop: '1rem' }}>
+                {tradeLabel}<span className="circ">{I.check}</span>
+              </button>
+            )}
+            {trade.status === 'error' && (<div className="split-total bad" style={{ marginTop: '0.75rem' }}>{trade.message}</div>)}
+            {trade.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Swap settled onchain — indexed by the backend</div>)}
+          </div>
+        )}
+      </div>
+      <WalletPanel />
+    </div>
+  )
+}
 function Activity() {
   const [q, setQ] = useState('')
   const [state, setState] = useState('idle') // idle | loading | done | error
@@ -554,11 +668,16 @@ function Pending({ toast }) {
     const token = getAuthToken()
     setBusyId(row.id)
     try {
-      const hash = await signPendingTransaction({
-        to: row.unsigned_to,
-        data: row.unsigned_data,
-        value: row.unsigned_value,
-      })
+      const hash = row.kind === 'swap'
+        ? await signAndConfirmSwapPlan({
+            approvals: row.approvals || [],
+            swap: { to: row.unsigned_to, data: row.unsigned_data, value: row.unsigned_value },
+          })
+        : await signPendingTransaction({
+            to: row.unsigned_to,
+            data: row.unsigned_data,
+            value: row.unsigned_value,
+          })
       await broadcastPendingTransaction({ data: { token, id: row.id, txHash: hash } })
       toast(`Sent · pending request #${row.id} settled onchain`)
       load()
@@ -589,8 +708,8 @@ function Pending({ toast }) {
         <div className="eyebrow" style={{ marginBottom: '0.4rem' }}>From the X bot</div>
         <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', lineHeight: 1.5 }}>
           Mention or DM <b>@TagioPayBot</b> — e.g. "send 0.001 eth to @handle", "send 5 usdg to #hashtag",
-          or "send 0.01 eth to 0x...". The bot never signs anything itself; each recognized request
-          shows up below for you to review and sign with your own wallet.
+          "send 0.01 eth to 0x...", or "swap 0.5 eth to GOOGL". The bot never signs anything itself;
+          each recognized request shows up below for you to review and sign with your own wallet.
         </p>
       </div>
       {loading ? (
@@ -603,10 +722,18 @@ function Pending({ toast }) {
             <div key={row.id} className="act-row" style={{ gridTemplateColumns: '2rem 1fr auto', alignItems: 'center' }}>
               <span className="act-ic in">{I.clock}</span>
               <div>
-                <b style={{ fontWeight: 500 }}>
-                  {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → {row.target_type === 'hashtag' ? '#' : row.target_type === 'x_account' ? '@' : ''}{row.target_value}
-                </b>
+                {row.kind === 'swap' ? (
+                  <b style={{ fontWeight: 500 }}>Swap {row.amount} {row.token} → {row.target_value}</b>
+                ) : (
+                  <b style={{ fontWeight: 500 }}>
+                    {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → {row.target_type === 'hashtag' ? '#' : row.target_type === 'x_account' ? '@' : ''}{row.target_value}
+                  </b>
+                )}
                 <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>
+                  {row.kind === 'swap' && row.quote_route && <>{row.quote_route} · </>}
+                  {row.kind === 'swap' && row.price_impact_pct != null && Math.abs(Number(row.price_impact_pct)) > 3 && (
+                    <span style={{ color: 'var(--red, #c0392b)' }}>high price impact (~{Math.abs(Number(row.price_impact_pct)).toFixed(1)}%) · </span>
+                  )}
                   {fmtWhen(row.created_at)}
                   {row.tweet_url && (<> · <a href={row.tweet_url} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)' }}>view tweet</a></>)}
                 </div>
@@ -628,6 +755,7 @@ const ROUTES = [
   { id: 'handles', label: 'Handles', icon: I.hash },
   { id: 'resolver', label: 'Resolver', icon: I.split },
   { id: 'send', label: 'Send', icon: I.send },
+  { id: 'trade', label: 'Trade', icon: I.trade },
   { id: 'pending', label: 'Pending', icon: I.clock },
   { id: 'activity', label: 'Activity', icon: I.act },
 ]
@@ -730,6 +858,7 @@ export default function Dashboard() {
     handles: ['Handles', 'The names you own on Robinhood Chain'],
     resolver: ['Resolver', handle ? `Routing & identity for #${handle.name}` : 'Routing & identity'],
     send: ['Send', 'Pay anyone by their handle'],
+    trade: ['Trade', 'Swap ETH/USDG for tokenized RWA stocks'],
     pending: ['Pending', 'Requests from the X bot, waiting on your signature'],
     activity: ['Activity', 'Indexed onchain payments per hashtag'],
   }
@@ -757,7 +886,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="content">
-            {!address && view !== 'send' && view !== 'activity' ? (
+            {!address && view !== 'send' && view !== 'trade' && view !== 'activity' ? (
               <ConnectPrompt />
             ) : (
               <>
@@ -767,6 +896,7 @@ export default function Dashboard() {
                   ? <Resolver key={handle.name} handle={handle} toast={toast} onSaved={refresh} />
                   : <div className="card pad-lg fade-in"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>{handlesQuery.isLoading ? 'Loading your handles…' : 'No handles to configure yet — claim one first.'}</p></div>)}
                 {view === 'send' && <Send toast={toast} />}
+                {view === 'trade' && <Trade toast={toast} />}
                 {view === 'pending' && <Pending toast={toast} />}
                 {view === 'activity' && <Activity />}
               </>

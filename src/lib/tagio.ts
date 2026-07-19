@@ -65,12 +65,12 @@ function apiUrl(path: string) {
   return base.replace(/\/+$/, "") + path;
 }
 
-async function apiFetch(path: string, init?: RequestInit): Promise<Response> {
+async function apiFetch(path: string, init?: RequestInit, okStatuses: number[] = [404]): Promise<Response> {
   const res = await fetch(apiUrl(path), {
     ...init,
     headers: { accept: "application/json", ...(init?.headers ?? {}) },
   });
-  if (!res.ok && res.status !== 404) {
+  if (!res.ok && !okStatuses.includes(res.status)) {
     let detail = "";
     try {
       const body = (await res.json()) as { error?: string };
@@ -164,16 +164,31 @@ export const signIn = createServerFn({ method: "POST" })
 
 /* ---------- pending transactions (created by the X bot, signed by the user) ---------- */
 
+export interface UnsignedTx {
+  to: string;
+  data: string;
+  value: string;
+  chainId: number;
+}
+
 export interface PendingTransaction {
   id: number;
-  target_type: "hashtag" | "wallet" | "x_account";
+  kind: "payment" | "swap";
+  target_type: "hashtag" | "wallet" | "x_account" | "swap";
   target_value: string;
   resolved_to_wallet: string;
-  token: "native" | "usdg";
+  // Payment rows: 'native' | 'usdg'. Swap rows: the fromSymbol being spent
+  // (e.g. 'ETH', 'USDG', or a stock ticker when selling one for ETH/USDG).
+  token: string;
   amount: string;
   unsigned_to: string;
   unsigned_data: string;
   unsigned_value: string;
+  // Only meaningful for kind='swap' -- approvals to sign (and wait for
+  // confirmation on) before the final unsigned_to/data/value swap tx.
+  approvals: UnsignedTx[];
+  quote_route: string | null;
+  price_impact_pct: string | null;
   tweet_url: string | null;
   status: string;
   created_at: string;
@@ -207,4 +222,70 @@ export const cancelPendingTransaction = createServerFn({ method: "POST" })
       headers: { authorization: `Bearer ${data.token}` },
     });
     return (await res.json()) as { cancelled: boolean };
+  });
+
+/* ---------- RWA stock trading (ETH/USDG <-> tokenized equities via Uniswap) ---------- */
+
+export interface TokenInfo {
+  symbol: string;
+  address: string;
+  native?: boolean;
+}
+
+export interface SwapTokenList {
+  swapIn: TokenInfo[]; // ETH, USDG
+  stocks: TokenInfo[]; // curated RWA allowlist
+}
+
+export interface SwapQuote {
+  amountOut: string;
+  decimalsOut: number;
+  priceImpactPct: number;
+  route: string;
+}
+
+export interface SwapPlan {
+  approvals: UnsignedTx[];
+  swap: UnsignedTx;
+  quote: SwapQuote;
+}
+
+export const getSwapTokens = createServerFn({ method: "GET" }).handler(
+  async (): Promise<SwapTokenList> => {
+    const res = await apiFetch("/tokens");
+    return (await res.json()) as SwapTokenList;
+  },
+);
+
+// Live preview only -- no unsigned tx here, just enough to show an expected
+// rate and price-impact warning before the user commits. Returns null on a
+// 422 (no route/liquidity for this pair yet) instead of throwing, since
+// that's an expected state for a thin or nonexistent RWA pool, not an error.
+export const getSwapQuote = createServerFn({ method: "POST" })
+  .validator((input: { fromSymbol: string; toSymbol: string; amountIn: number }) => input)
+  .handler(async ({ data }): Promise<SwapQuote | null> => {
+    const res = await apiFetch(
+      "/swap/quote",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) },
+      [422],
+    );
+    if (res.status === 422) return null;
+    return (await res.json()) as SwapQuote;
+  });
+
+// Builds fresh, real unsigned transactions (0-2 approvals + the swap itself)
+// for the connected wallet to sign -- always re-quoted server-side at this
+// exact moment rather than reusing an earlier preview, so the minimum-out
+// baked into the swap reflects the current pool state as closely as
+// possible right before signing.
+export const getSwapPlan = createServerFn({ method: "POST" })
+  .validator((input: { fromSymbol: string; toSymbol: string; amountIn: number; walletAddress: string }) => input)
+  .handler(async ({ data }): Promise<SwapPlan | null> => {
+    const res = await apiFetch(
+      "/swap/plan",
+      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) },
+      [422],
+    );
+    if (res.status === 422) return null;
+    return (await res.json()) as SwapPlan;
   });

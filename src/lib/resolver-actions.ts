@@ -241,6 +241,47 @@ export async function signPendingTransaction(input: {
   return hash;
 }
 
+interface UnsignedTxLike {
+  to: string;
+  data: string;
+  value: string;
+}
+
+/**
+ * Signs a swap plan's approvals (if any) then its swap, in order -- waiting
+ * for and verifying EVERY transaction's receipt, including the swap itself.
+ * A prior version of this trade flow (plainly) waited for approval receipts
+ * but not the swap's own, so a swap that reverted on-chain (easy to hit on
+ * thin RWA-token pools, where slippage between quoting and landing matters
+ * far more than it does on a deep pool) still got reported as a success.
+ * waitForReceiptOrThrow throws on a reverted receipt for every step here,
+ * approvals and swap alike, so that gap can't recur.
+ */
+export async function signAndConfirmSwapPlan(plan: {
+  approvals: UnsignedTxLike[];
+  swap: UnsignedTxLike;
+}): Promise<Hash> {
+  await ensureWallet();
+  for (const approval of plan.approvals) {
+    const hash = await sendTransaction(wagmiConfig, {
+      to: approval.to as `0x${string}`,
+      data: approval.data as `0x${string}`,
+      value: BigInt(approval.value || "0"),
+      chainId: robinhoodChain.id,
+    });
+    await waitForReceiptOrThrow(hash);
+  }
+
+  const swapHash = await sendTransaction(wagmiConfig, {
+    to: plan.swap.to as `0x${string}`,
+    data: plan.swap.data as `0x${string}`,
+    value: BigInt(plan.swap.value || "0"),
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(swapHash);
+  return swapHash;
+}
+
 const REVERT_MESSAGES: Record<string, string> = {
   HashtagAlreadyExists: "That hashtag is already registered and active",
   InvalidHashtag: "Invalid hashtag — 3–32 lowercase letters, numbers, or underscores",

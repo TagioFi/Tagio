@@ -6,6 +6,7 @@ import hashtagRoutes from "./routes/hashtags";
 import resolveRoutes from "./routes/resolve";
 import transactionRoutes from "./routes/transactions";
 import pendingTransactionRoutes from "./routes/pendingTransactions";
+import swapRoutes from "./routes/swap";
 import authRoutes from "./routes/auth";
 import xAuthCallbackRoutes from "./routes/xAuthCallback";
 import { errorHandler } from "./middleware/errorHandler";
@@ -22,6 +23,7 @@ app.use(hashtagRoutes);
 app.use(resolveRoutes);
 app.use(transactionRoutes);
 app.use(pendingTransactionRoutes);
+app.use(swapRoutes);
 app.use(authRoutes);
 app.use(xAuthCallbackRoutes);
 
