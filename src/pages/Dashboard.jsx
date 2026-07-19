@@ -238,36 +238,7 @@ function Claim({ toast, onRegistered }) {
     </div>
   )
 }
-function ImportHandle({ address, toast, onImported }) {
-  const [q, setQ] = useState('')
-  const [busy, setBusy] = useState(false)
-  const norm = q.toLowerCase().trim().replace(/^[#@]+/, '')
-  const doImport = async () => {
-    setBusy(true)
-    try {
-      const r = await getHashtag({ data: norm })
-      if (!r || !r.active) { toast(`#${norm} isn't registered`) }
-      else if (r.owner_wallet?.toLowerCase() !== address.toLowerCase()) { toast(`#${norm} is owned by ${short(r.owner_wallet)}, not your wallet`) }
-      else { addTracked(address, r.hashtag); setQ(''); toast(`#${r.hashtag} added to your handles`); onImported?.() }
-    } catch {
-      toast('Lookup failed — try again')
-    } finally {
-      setBusy(false)
-    }
-  }
-  return (
-    <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
-      <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Already own a handle?</div>
-      <div className="field">
-        <span className="hash">#</span>
-        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="handle you own" spellCheck="false" onKeyDown={(e) => { if (e.key === 'Enter' && NAME_RE.test(norm)) doImport() }} />
-        <button className="btn sm" disabled={!NAME_RE.test(norm) || busy} onClick={doImport}>{busy ? 'Checking…' : 'Import'}</button>
-      </div>
-      <div className="status" style={{ color: 'var(--ink-faint)' }}>Handles registered from another browser aren't listed automatically yet — import them here.</div>
-    </div>
-  )
-}
-function Handles({ handles, loading, address, manage, renew, renewing, toast, refresh }) {
+function Handles({ handles, loading, manage, renew, renewing, toast, refresh }) {
   return (
     <div className="fade-in">
       {handles.length === 0 && (
@@ -276,7 +247,6 @@ function Handles({ handles, loading, address, manage, renew, renewing, toast, re
         </div>
       )}
       <div className="grid handles" style={{ marginBottom: '1rem' }}>{handles.map((h) => <HandleCard key={h.name} h={h} onManage={() => manage(h.name)} onRenew={() => renew(h.name)} renewing={renewing === h.name} />)}</div>
-      {address && <ImportHandle address={address} toast={toast} onImported={refresh} />}
       <Claim toast={toast} onRegistered={refresh} />
     </div>
   )
@@ -792,7 +762,7 @@ export default function Dashboard() {
             ) : (
               <>
                 {view === 'overview' && <Overview handles={handles} activity={activity} loading={handlesQuery.isLoading} go={go} manage={manage} renew={renew} renewing={renewing} />}
-                {view === 'handles' && <Handles handles={handles} loading={handlesQuery.isLoading} address={address} manage={manage} renew={renew} renewing={renewing} toast={toast} refresh={refresh} />}
+                {view === 'handles' && <Handles handles={handles} loading={handlesQuery.isLoading} manage={manage} renew={renew} renewing={renewing} toast={toast} refresh={refresh} />}
                 {view === 'resolver' && (handle
                   ? <Resolver key={handle.name} handle={handle} toast={toast} onSaved={refresh} />
                   : <div className="card pad-lg fade-in"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>{handlesQuery.isLoading ? 'Loading your handles…' : 'No handles to configure yet — claim one first.'}</p></div>)}
