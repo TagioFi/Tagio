@@ -1,10 +1,17 @@
 import { Router } from "express";
 import { isAddress } from "viem";
 import { ETH, USDG, STOCK_TOKENS, resolveToken } from "../lib/rwaTokens";
-import { quoteSwap } from "../lib/uniswapV3";
+import { quoteSwap, type SwapQuote } from "../lib/uniswapV3";
 import { planSwap } from "../lib/swapExecution";
 
 const router = Router();
+
+// amountOutWei is a bigint used internally for slippage math; JSON.stringify
+// throws on BigInt, so it must never reach res.json. Clients read the
+// decimal-string amountOut instead.
+function toApiQuote({ amountOutWei: _amountOutWei, ...rest }: SwapQuote) {
+  return rest;
+}
 
 // The token picker for the dapp's Trade view -- ETH/USDG plus the curated
 // RWA allowlist. No auth needed; this is just a static reference list.
@@ -38,7 +45,7 @@ router.post("/swap/quote", async (req, res, next) => {
       res.status(422).json({ error: "no route found -- this pair has no liquidity yet" });
       return;
     }
-    res.json(quote);
+    res.json(toApiQuote(quote));
   } catch (err) {
     next(err);
   }
@@ -71,7 +78,7 @@ router.post("/swap/plan", async (req, res, next) => {
       res.status(422).json({ error: "no route found -- this pair has no liquidity yet" });
       return;
     }
-    res.json(plan);
+    res.json({ ...plan, quote: toApiQuote(plan.quote) });
   } catch (err) {
     next(err);
   }
