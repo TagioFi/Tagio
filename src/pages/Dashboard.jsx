@@ -1262,7 +1262,7 @@ function Pending({ rows, loading, busyId, sign, dismiss }) {
   return (
     <div className="fade-in">
       <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
-        <div className="eyebrow" style={{ marginBottom: '0.4rem' }}>From the X bot</div>
+        <div className="eyebrow" style={{ marginBottom: '0.4rem' }}>From the X bot or DApp</div>
         <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', lineHeight: 1.5 }}>
           Mention or DM <b>@TagioPayBot</b> — e.g. "send 0.001 eth to @handle", "send 5 usdg to #hashtag",
           "send 0.01 eth to 0x...", or "swap 0.5 eth to GOOGL". The bot never signs anything itself;
@@ -1321,7 +1321,7 @@ function PendingModal({ rows, busyId, sign, dismiss, onViewAll, onClose }) {
           <button className="btn ghost sm" onClick={onClose}><span className="circ">{I.x}</span></button>
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1rem' }}>
-          {rows.length} request{rows.length === 1 ? '' : 's'} from the X bot {rows.length === 1 ? 'is' : 'are'} ready to review.
+          {rows.length} request{rows.length === 1 ? '' : 's'} from the X bot or DApp {rows.length === 1 ? 'is' : 'are'} ready to review.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {shown.map((row) => (
@@ -1513,7 +1513,7 @@ export default function Dashboard() {
     causes: ['Causes', 'Public, transparent donations with on-chain receipts'],
     escrow: ['Escrow', 'Create -> Accept -> Deliver -> Release, for freelance and any bilateral deal'],
     psend: ['Private Send', "Shields your identity from the recipient -- their wallet only ever sees TagioPay's pool, never yours"],
-    pending: ['Pending', 'Requests from the X bot, waiting on your signature'],
+    pending: ['Pending', 'Requests from the X bot or DApp, waiting on your signature'],
     activity: ['Activity', 'Indexed onchain payments per hashtag'],
   }
 
