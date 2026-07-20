@@ -1092,7 +1092,10 @@ function WalletIdentityModal({ wallet, onClose }) {
                 <div className="eyebrow" style={{ marginBottom: '0.3rem' }}>Top hashtags</div>
                 {identity.hashtags.map((h) => (
                   <div key={h.hashtag} className="route-line" style={{ fontSize: '0.85rem' }}>
-                    <span>#{h.hashtag}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', verticalAlign: 'middle' }}>
+                      <img src="/favicon.png" alt="" style={{ width: '1.2rem', height: '1.2rem', borderRadius: '0.3rem', flex: 'none', display: 'block' }} />
+                      <span>#{h.hashtag}</span>
+                    </span>
                     <span style={{ color: 'var(--ink-faint)' }}>{h.name || ''}</span>
                   </div>
                 ))}
