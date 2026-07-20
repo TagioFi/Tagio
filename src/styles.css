@@ -230,6 +230,7 @@ h1.headline .l2 .accent{ color:var(--green); }
 #app .nav-item svg{ width:1.15rem; height:1.15rem; flex:none; }
 #app .nav-item:hover{ color:#fff; background:rgba(255,255,255,0.05); }
 #app .nav-item.active{ color:#fff; background:rgba(200,232,96,0.16); box-shadow:inset 0.18rem 0 0 var(--green-bright); }
+#app .nav-badge{ margin-left:auto; background:var(--green-bright); color:var(--ink); font-size:0.72rem; font-weight:600; line-height:1; padding:0.2rem 0.45rem; border-radius:9999px; min-width:1.1rem; text-align:center; }
 #app .side-spacer{ flex:1; }
 #app .net-chip{ display:flex; align-items:center; gap:0.5rem; padding:0.65rem 0.75rem; border:1px solid rgba(255,255,255,0.12); border-radius:var(--radius-sm); font-size:0.85rem; color:rgba(255,255,255,0.75); margin-bottom:0.75rem; }
 #app .net-chip .live{ width:0.5rem; height:0.5rem; border-radius:50%; background:var(--green-bright); box-shadow:0 0 0.5rem var(--green-bright); }

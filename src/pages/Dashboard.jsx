@@ -1084,22 +1084,47 @@ function PrivateSendRow({ row, address, toast, onChanged }) {
   )
 }
 
+function PrivateSendGroup({ title, rows, address, toast, onChanged }) {
+  if (rows.length === 0) return null
+  return (
+    <>
+      <div className="eyebrow" style={{ margin: '1.25rem 0 0.5rem' }}>{title}</div>
+      {rows.map((row) => (
+        <PrivateSendRow key={row.id} row={row} address={address} toast={toast} onChanged={onChanged} />
+      ))}
+    </>
+  )
+}
+
 function PrivateSend({ toast }) {
   const { address } = useAccount()
   const query = useQuery({ queryKey: ['private-sends', address], queryFn: () => getPrivateSends({ data: address }), enabled: !!address })
   const rows = query.data || []
+  const onChanged = () => query.refetch()
+  const lower = address?.toLowerCase()
+
+  // Split into three clearly labeled groups instead of one mixed list --
+  // unclaimed-and-waiting-on-you surfaces first since it's the one thing
+  // that actually needs your attention (a Claim button right there);
+  // what you've sent tracks your own outgoing sends regardless of whether
+  // the recipient has claimed yet; claimed is just settled history.
+  const receivedUnclaimed = rows.filter((r) => r.recipientWallet?.toLowerCase() === lower && r.status !== 'claimed')
+  const sent = rows.filter((r) => r.senderWallet?.toLowerCase() === lower)
+  const receivedClaimed = rows.filter((r) => r.recipientWallet?.toLowerCase() === lower && r.status === 'claimed')
 
   return (
     <div className="fade-in">
-      <CreatePrivateSend toast={toast} onCreated={() => query.refetch()} />
+      <CreatePrivateSend toast={toast} onCreated={onChanged} />
       {query.isLoading ? (
         <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>Loading private sends…</p></div>
       ) : rows.length === 0 ? (
         <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No private sends yet — send one above, or use <code>$psend amount TOKEN to @handle</code> on X.</p></div>
       ) : (
-        rows.map((row) => (
-          <PrivateSendRow key={row.id} row={row} address={address} toast={toast} onChanged={() => query.refetch()} />
-        ))
+        <>
+          <PrivateSendGroup title="Received, waiting for you to claim" rows={receivedUnclaimed} address={address} toast={toast} onChanged={onChanged} />
+          <PrivateSendGroup title="Sent by you" rows={sent} address={address} toast={toast} onChanged={onChanged} />
+          <PrivateSendGroup title="Received, claimed" rows={receivedClaimed} address={address} toast={toast} onChanged={onChanged} />
+        </>
       )}
     </div>
   )
@@ -1434,7 +1459,12 @@ export default function Dashboard() {
           <Link className="brand" to="/"><span className="brand-logo" role="img" aria-label="Tagio"></span></Link>
           <nav className="nav">{ROUTES.map((r) => r.to
             ? <Link key={r.id} className="nav-item" to={r.to}>{r.icon}{r.label}</Link>
-            : <button key={r.id} className={'nav-item ' + (view === r.id ? 'active' : '')} onClick={() => go(r.id)}>{r.icon}{r.label}</button>
+            : (
+              <button key={r.id} className={'nav-item ' + (view === r.id ? 'active' : '')} onClick={() => go(r.id)}>
+                {r.icon}{r.label}
+                {r.id === 'pending' && pendingRows.length > 0 && <span className="nav-badge">{pendingRows.length}</span>}
+              </button>
+            )
           )}</nav>
           <div className="side-spacer"></div>
           <div className="net-chip"><span className="live"></span>Robinhood Chain · L2</div>
