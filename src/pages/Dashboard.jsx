@@ -1112,6 +1112,9 @@ function PrivateSend({ toast }) {
 // landed onchain before marking it done.
 // Shared by the Pending tab and the on-load PendingModal so the two never
 // drift apart on how a row's headline reads.
+const tokenLabel = (row) => (row.token === 'native' ? 'ETH' : 'USDG')
+const titleCase = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s)
+
 function PendingRowLabel({ row }) {
   if (row.kind === 'swap') {
     return <b style={{ fontWeight: 500 }}>Swap {row.amount} {row.token} → {row.target_value}</b>
@@ -1119,16 +1122,35 @@ function PendingRowLabel({ row }) {
   if (row.kind === 'deposit') {
     return (
       <b style={{ fontWeight: 500 }}>
-        {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → @{row.target_value} <span style={{ fontWeight: 400, color: 'var(--ink-faint)' }}>(escrowed until they link)</span>
+        {row.amount} {tokenLabel(row)} → @{row.target_value} <span style={{ fontWeight: 400, color: 'var(--ink-faint)' }}>(escrowed until they link)</span>
       </b>
     )
   }
   if (row.kind === 'claim') {
-    return <b style={{ fontWeight: 500 }}>Claim {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} from escrow</b>
+    return <b style={{ fontWeight: 500 }}>Claim {row.amount} {tokenLabel(row)} from escrow</b>
+  }
+  if (row.kind === 'cause') {
+    const action = row.target_type?.replace('cause_', '')
+    const ref = row.target_value && row.target_value !== 'new' ? ` ${row.target_value}` : ''
+    if (action === 'create') return <b style={{ fontWeight: 500 }}>Create cause{ref}</b>
+    if (action === 'donate') return <b style={{ fontWeight: 500 }}>Donate {row.amount} {tokenLabel(row)}{ref}</b>
+    return <b style={{ fontWeight: 500 }}>Withdraw {row.amount} {tokenLabel(row)}{ref}</b>
+  }
+  if (row.kind === 'escrow') {
+    const action = row.target_type?.replace('escrow_', '')
+    const ref = row.target_value && row.target_value !== 'new' ? ` ${row.target_value}` : ''
+    if (action === 'create') return <b style={{ fontWeight: 500 }}>Create escrow {row.amount} {tokenLabel(row)}{ref}</b>
+    return <b style={{ fontWeight: 500 }}>{titleCase(action)} escrow{ref}</b>
+  }
+  if (row.kind === 'psend') {
+    return <b style={{ fontWeight: 500 }}>Private send {row.amount} {tokenLabel(row)}</b>
+  }
+  if (row.kind === 'psend_claim') {
+    return <b style={{ fontWeight: 500 }}>Claim private send {row.amount && row.amount !== '0' ? `${row.amount} ${tokenLabel(row)}` : ''}</b>
   }
   return (
     <b style={{ fontWeight: 500 }}>
-      {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → {row.target_type === 'hashtag' ? '#' : row.target_type === 'x_account' ? '@' : ''}{row.target_value}
+      {row.amount} {tokenLabel(row)} → {row.target_type === 'hashtag' ? '#' + row.target_value : row.target_type === 'x_account' ? '@' + row.target_value : short(row.target_value)}
     </b>
   )
 }

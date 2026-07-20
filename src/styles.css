@@ -332,6 +332,13 @@ h1.headline .l2 .accent{ color:var(--green); }
 #app .route-line .who b{ font-weight:500; font-size:0.95rem; }
 #app .route-line .amt{ font-weight:500; font-variant-numeric:tabular-nums; }
 #app .act-row{ display:grid; grid-template-columns:2.5rem 1.5fr 1fr 1fr 0.8fr; gap:1rem; align-items:center; padding:0.9rem 0; border-bottom:1px solid var(--hairline); font-size:0.9rem; }
+/* Grid children default to a min-width based on their content, not the
+   column's 1fr share -- an unbroken string (a full address, a commitment
+   hash) would otherwise force the whole row (and the page) wider instead
+   of wrapping. min-width:0 lets the column actually shrink; overflow-wrap
+   lets long unbroken text wrap onto a second line instead of overflowing. */
+#app .act-row > *{ min-width:0; }
+#app .act-row b{ overflow-wrap:anywhere; }
 #app .act-row.head{ font-size:0.75rem; text-transform:uppercase; letter-spacing:0.07em; color:var(--ink-faint); }
 #app .act-ic{ width:2.2rem; height:2.2rem; border-radius:50%; display:flex; align-items:center; justify-content:center; }
 #app .act-ic.in{ background:rgba(200,232,96,0.12); color:var(--green-deep); }
