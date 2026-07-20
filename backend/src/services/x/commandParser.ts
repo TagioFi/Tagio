@@ -71,3 +71,163 @@ export function parseSwapCommand(rawText: string): ParsedSwapCommand | null {
 
   return null;
 }
+
+// Wave 5: donations/crowdfunding. "$"-prefixed, deliberately distinct from
+// the bare-keyword send/swap grammar above so there's no ambiguity between
+// command families. "usdc" is accepted as a synonym for our one on-chain
+// stablecoin (usdg) since that's the vocabulary the original spec used.
+function normalizeToken(raw: string): BotToken {
+  return raw.toLowerCase() === "eth" ? "native" : "usdg";
+}
+
+export type CauseAction = "create" | "donate" | "leaderboard" | "withdraw";
+
+export interface ParsedCauseCommand {
+  action: CauseAction;
+  name?: string; // create
+  goalAmount?: string; // create
+  goalToken?: BotToken; // create
+  organizerWallet?: `0x${string}`; // create
+  causeId?: number; // donate | leaderboard | withdraw
+  amount?: string; // donate | withdraw
+  token?: BotToken; // donate
+  reason?: string; // withdraw
+}
+
+const CAUSE_CREATE_PATTERN =
+  /\$cause\s+create\s+"([^"]+)"\s+goal:\s*([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+wallet:\s*(0x[a-fA-F0-9]{40})/i;
+const CAUSE_DONATE_PATTERN = /\$cause\s+donate\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+#CAUSE-(\d+)/i;
+const CAUSE_LEADERBOARD_PATTERN = /\$cause\s+leaderboard\s+#CAUSE-(\d+)/i;
+// Withdraw amount is always denominated in whatever token the cause itself
+// was created with -- a token word may still appear in the text right after
+// the amount (matching the natural "1000USDC" phrasing), it's just not
+// captured or trusted, since the cause's own on-chain record is what
+// actually determines the token.
+const CAUSE_WITHDRAW_PATTERN =
+  /\$cause\s+withdraw\s+#CAUSE-(\d+)\s+([0-9]*\.?[0-9]+)\s*(?:eth|usdg|usdc)?\s+(?:to\s+)?"([^"]+)"/i;
+
+export function parseCauseCommand(rawText: string): ParsedCauseCommand | null {
+  let m = rawText.match(CAUSE_CREATE_PATTERN);
+  if (m) {
+    return {
+      action: "create",
+      name: m[1],
+      goalAmount: m[2],
+      goalToken: normalizeToken(m[3]!),
+      organizerWallet: m[4] as `0x${string}`,
+    };
+  }
+
+  m = rawText.match(CAUSE_DONATE_PATTERN);
+  if (m) {
+    return { action: "donate", amount: m[1], token: normalizeToken(m[2]!), causeId: Number(m[3]) };
+  }
+
+  m = rawText.match(CAUSE_LEADERBOARD_PATTERN);
+  if (m) {
+    return { action: "leaderboard", causeId: Number(m[1]) };
+  }
+
+  m = rawText.match(CAUSE_WITHDRAW_PATTERN);
+  if (m) {
+    return { action: "withdraw", causeId: Number(m[1]), amount: m[2], reason: m[3] };
+  }
+
+  return null;
+}
+
+// "$donate 50usdg to "Flood Relief Turkey"" -- donating to a cause by its
+// free-text name rather than #CAUSE-<id>. Donating directly to an @handle
+// ("$donate 10usdg to @RedCross") is intentionally just the existing plain
+// send grammar under different framing, not a cause at all -- no separate
+// parsing needed for that form.
+export interface ParsedDonateToNameCommand {
+  amount: string;
+  token: BotToken;
+  causeName: string;
+}
+
+const DONATE_TO_NAME_PATTERN = /\$donate\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+"([^"]+)"/i;
+
+export function parseDonateToName(rawText: string): ParsedDonateToNameCommand | null {
+  const m = rawText.match(DONATE_TO_NAME_PATTERN);
+  if (!m) return null;
+  return { amount: m[1]!, token: normalizeToken(m[2]!), causeName: m[3]! };
+}
+
+// Wave 6: generic escrow. "$"-prefixed, same family as the cause commands
+// above. No dispute/jury system in v1 (confirmed 2026-07-20) -- accept,
+// deliver, release, and cancel are the only state transitions; the deliver/
+// release safety-net timers live entirely in the contract, not here.
+export type EscrowAction = "create" | "accept" | "deliver" | "release" | "cancel";
+
+export interface ParsedEscrowCommand {
+  action: EscrowAction;
+  description?: string; // create
+  amount?: string; // create
+  token?: BotToken; // create
+  counterpartyHandle?: string; // create -- resolved to a wallet by the caller, same as send's @handle targets
+  escrowId?: number; // accept | deliver | release | cancel
+  proofUrl?: string; // deliver
+}
+
+const ESCROW_CREATE_PATTERN =
+  /\$escrow\s+"([^"]+)"\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+@([a-zA-Z0-9_]{1,15})/i;
+const ESCROW_ACCEPT_PATTERN = /\$accept\s+#(\d+)/i;
+const ESCROW_DELIVER_PATTERN = /\$deliver\s+#(\d+)\s+(\S+)/i;
+const ESCROW_RELEASE_PATTERN = /\$release\s+#(\d+)/i;
+const ESCROW_CANCEL_PATTERN = /\$cancel\s+#(\d+)/i;
+
+export function parseEscrowCommand(rawText: string): ParsedEscrowCommand | null {
+  let m = rawText.match(ESCROW_CREATE_PATTERN);
+  if (m) {
+    return {
+      action: "create",
+      description: m[1],
+      amount: m[2],
+      token: normalizeToken(m[3]!),
+      counterpartyHandle: m[4],
+    };
+  }
+
+  m = rawText.match(ESCROW_ACCEPT_PATTERN);
+  if (m) return { action: "accept", escrowId: Number(m[1]) };
+
+  m = rawText.match(ESCROW_DELIVER_PATTERN);
+  if (m) return { action: "deliver", escrowId: Number(m[1]), proofUrl: m[2] };
+
+  m = rawText.match(ESCROW_RELEASE_PATTERN);
+  if (m) return { action: "release", escrowId: Number(m[1]) };
+
+  m = rawText.match(ESCROW_CANCEL_PATTERN);
+  if (m) return { action: "cancel", escrowId: Number(m[1]) };
+
+  return null;
+}
+
+// Wave 7: private send. "$"-prefixed, same family as cause/escrow. Recipient
+// must already be a linked wallet (see privateSendHandler.ts) -- the
+// commitment needs a concrete recipient address at send time, so there's no
+// unlinked-handle path the way plain sends have ClaimEscrow.
+export interface ParsedPrivateSendCommand {
+  amount: string;
+  token: BotToken;
+  recipientHandle: string;
+}
+
+const PRIVATE_SEND_PATTERN = /\$psend\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+@([a-zA-Z0-9_]{1,15})/i;
+
+export function parsePrivateSendCommand(rawText: string): ParsedPrivateSendCommand | null {
+  const m = rawText.match(PRIVATE_SEND_PATTERN);
+  if (!m) return null;
+  return { amount: m[1]!, token: normalizeToken(m[2]!), recipientHandle: m[3]! };
+}
+
+// Manual fallback for the recipient side -- no arguments, just resolves
+// their own oldest still-claimable private send (see
+// privateSendHandler.handleClaimCommand).
+const CLAIM_PATTERN = /\$claim\b/i;
+
+export function isClaimCommand(rawText: string): boolean {
+  return CLAIM_PATTERN.test(rawText);
+}

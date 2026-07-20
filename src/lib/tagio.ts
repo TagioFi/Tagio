@@ -173,9 +173,10 @@ export interface UnsignedTx {
 
 export interface PendingTransaction {
   id: number;
-  kind: "payment" | "swap";
-  target_type: "hashtag" | "wallet" | "x_account" | "swap";
+  kind: "payment" | "swap" | "disperse" | "deposit" | "claim";
+  target_type: "hashtag" | "wallet" | "x_account" | "swap" | "disperse" | "deposit" | "claim";
   target_value: string;
+  target_x_user_id: string | null;
   resolved_to_wallet: string;
   // Payment rows: 'native' | 'usdg'. Swap rows: the fromSymbol being spent
   // (e.g. 'ETH', 'USDG', or a stock ticker when selling one for ETH/USDG).
@@ -184,14 +185,21 @@ export interface PendingTransaction {
   unsigned_to: string;
   unsigned_data: string;
   unsigned_value: string;
-  // Only meaningful for kind='swap' -- approvals to sign (and wait for
-  // confirmation on) before the final unsigned_to/data/value swap tx.
+  // Approvals to sign (and wait for confirmation on) before unsigned_to/data/value.
   approvals: UnsignedTx[];
+  // Disperse rows only -- additional steps signed in order AFTER
+  // unsigned_to/data/value (e.g. one ClaimEscrow deposit per unlinked
+  // giveaway/airdrop winner).
+  extra_steps: UnsignedTx[];
   quote_route: string | null;
   price_impact_pct: string | null;
   tweet_url: string | null;
   status: string;
   created_at: string;
+  // 'x_bot' for a live mention/DM command; 'giveaway' | 'airdrop' |
+  // 'direct-send' when this row came from claiming a past unclaimed
+  // allocation after linking an X account.
+  source: string;
 }
 
 export const getPendingTransactions = createServerFn({ method: "GET" })
@@ -306,4 +314,114 @@ export const getWalletBalances = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<WalletBalance[]> => {
     const res = await apiFetch(`/wallet/${data.address}/balances`);
     return (await res.json()) as WalletBalance[];
+  });
+
+/* ---------- causes (Wave 5: donations/crowdfunding) ---------- */
+
+export interface Cause {
+  causeId: number;
+  name: string;
+  organizer: string;
+  token: string; // zero address = native ETH
+  goal: string;
+  totalRaised: string;
+  totalWithdrawn: string;
+}
+
+export interface LeaderboardEntry {
+  donor: string;
+  total: string;
+}
+
+export const getCauses = createServerFn({ method: "GET" }).handler(async (): Promise<Cause[]> => {
+  const res = await apiFetch("/causes");
+  return (await res.json()) as Cause[];
+});
+
+export const getCauseLeaderboard = createServerFn({ method: "GET" })
+  .validator((causeId: number) => causeId)
+  .handler(async ({ data: causeId }): Promise<LeaderboardEntry[]> => {
+    const res = await apiFetch(`/causes/${causeId}/leaderboard`);
+    return (await res.json()) as LeaderboardEntry[];
+  });
+
+/* ---------- escrow (Wave 6: generic Create->Accept->Deliver->Release) ---------- */
+
+export interface Escrow {
+  escrowId: number;
+  creator: string;
+  counterparty: string;
+  token: string; // zero address = native ETH
+  amount: string;
+  description: string;
+  status: "None" | "Created" | "Accepted" | "Delivered" | "Released" | "Cancelled";
+  deliverDeadline: string;
+  releaseDeadline: string;
+  proofUrl: string;
+}
+
+export const getEscrows = createServerFn({ method: "GET" })
+  .validator((wallet: string) => wallet)
+  .handler(async ({ data: wallet }): Promise<Escrow[]> => {
+    const res = await apiFetch(`/escrows?wallet=${wallet}`);
+    return (await res.json()) as Escrow[];
+  });
+
+export const getEscrowDetails = createServerFn({ method: "GET" })
+  .validator((escrowId: number) => escrowId)
+  .handler(async ({ data: escrowId }): Promise<Escrow> => {
+    const res = await apiFetch(`/escrows/${escrowId}`);
+    return (await res.json()) as Escrow;
+  });
+
+/* ---------- private send (Wave 7: shields the sender from the recipient) ---------- */
+
+export interface PrivateSend {
+  id: number;
+  senderWallet: string;
+  recipientWallet: string;
+  token: "native" | "usdg";
+  amount: string;
+  keeperFeeWei: string; // always native ETH wei, regardless of `token`
+  status: "pending_send" | "sent" | "claimed" | "failed";
+  sentTxHash: string | null;
+  claimedTxHash: string | null;
+  claimedBy: "keeper" | "self" | null;
+  createdAt: string;
+  claimedAt: string | null;
+}
+
+export const getPrivateSends = createServerFn({ method: "GET" })
+  .validator((wallet: string) => wallet)
+  .handler(async ({ data: wallet }): Promise<PrivateSend[]> => {
+    const res = await apiFetch(`/private-sends?wallet=${wallet}`);
+    return (await res.json()) as PrivateSend[];
+  });
+
+// Dashboard-native equivalent of the $psend bot command -- creates the
+// pending_transactions row the sender then signs via the normal Pending
+// tab flow. Requires auth since the backend resolves the recipient from the
+// caller's own linked X account context.
+export const createPrivateSend = createServerFn({ method: "POST" })
+  .validator((input: { token: string; recipientHandle: string; amount: string; sendToken: "native" | "usdg" }) => input)
+  .handler(async ({ data }): Promise<{ created: boolean; id: number }> => {
+    const res = await apiFetch("/private-sends", {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${data.token}` },
+      body: JSON.stringify({ recipientHandle: data.recipientHandle, amount: data.amount, token: data.sendToken }),
+    });
+    return (await res.json()) as { created: boolean; id: number };
+  });
+
+// Manual claim fallback -- builds the recipient's own signed claim(), same
+// pending_transactions flow as everything else. Only works while the
+// keeper hasn't already claimed it first (status must still be 'sent').
+export const claimPrivateSend = createServerFn({ method: "POST" })
+  .validator((input: { token: string; id: number }) => input)
+  .handler(async ({ data }): Promise<{ created: boolean }> => {
+    const res = await apiFetch(`/private-sends/${data.id}/claim`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${data.token}` },
+    });
+    return (await res.json()) as { created: boolean };
   });

@@ -3,6 +3,7 @@ import { config } from "../config";
 import { consumePendingAuthState } from "../services/x/pendingAuthState";
 import { exchangeCodeForToken, getAuthenticatedXUser } from "../services/x/oauth";
 import { linkXAccount } from "../services/x/xAccountService";
+import { claimAllocationsForXUser } from "../services/x/unclaimedAllocationService";
 import { issueJwt } from "./auth";
 
 const router = Router();
@@ -30,6 +31,7 @@ router.get("/auth/x/callback", async (req, res, next) => {
     const xUser = await getAuthenticatedXUser(tokenResponse.access_token);
 
     await linkXAccount(pending.walletAddress, xUser.id, xUser.username);
+    await claimAllocationsForXUser(xUser.id, pending.walletAddress as `0x${string}`);
 
     const token = issueJwt(pending.walletAddress);
     // Fragment, not query string -- the JWT never gets logged in server access logs.

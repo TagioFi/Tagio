@@ -1,12 +1,19 @@
-import { listNewMentions, listRecentDirectMessages, replyToMention, replyToDirectMessage } from "./botClient";
+import { listNewMentions, listRecentDirectMessages, replyToMention, replyToDirectMessage, getUserByUsername } from "./botClient";
 import { getCursor, setCursor } from "./botCursor";
-import { parseCommand, parseSwapCommand } from "./commandParser";
+import { parseCommand, parseSwapCommand, parseCauseCommand, parseDonateToName, parseEscrowCommand, parsePrivateSendCommand, isClaimCommand } from "./commandParser";
 import { resolveTargetWallet } from "./targetResolver";
-import { buildUnsignedTransfer, buildUnsignedHashtagPayment } from "./txBuilder";
+import { buildUnsignedTransfer, buildUnsignedHashtagPayment, buildUnsignedDeposit } from "./txBuilder";
 import { getWalletByXUserId } from "./xAccountService";
-import { createPendingTransaction, createPendingSwap } from "./pendingTransactionService";
+import { createPendingTransaction, createPendingSwap, createPendingDeposit } from "./pendingTransactionService";
 import { resolveToken } from "../../lib/rwaTokens";
 import { planSwap } from "../../lib/swapExecution";
+import { parseIntent } from "./intentParser";
+import { getOpenClarification, saveClarification, clearClarification, CLARIFICATION_REPLIES } from "./clarificationService";
+import { handleGiveawayIntent } from "./giveawayHandler";
+import { handleHoldAirdrop, handleBullpostAirdrop } from "./airdropHandler";
+import { handleCauseCommand, handleDonateToName } from "./causeHandler";
+import { handleEscrowCommand } from "./escrowHandler";
+import { handlePrivateSendCommand, handleClaimCommand } from "./privateSendHandler";
 import { log } from "../../lib/logger";
 
 // No links in bot replies (by design -- the dapp link lives in the bot's bio
@@ -22,6 +29,8 @@ const REPLY_UNSUPPORTED_HASHTAG_TOKEN =
 const REPLY_SWAP_TOKEN_NOT_FOUND =
   "Didn't recognize one of those tokens. Try a symbol like ETH, USDG, AAPL, NVDA, GOOGL, TSLA, AMZN, MSFT, META, COIN, or SPCX.";
 const REPLY_SWAP_NO_ROUTE = "No liquidity route for that pair yet. Try a different amount or pair.";
+const REPLY_ALLOCATION_RESERVED =
+  "That account hasn't linked TagioPay yet -- tap the link in my bio to review and sign the deposit. It's held in escrow for 120 days and unlocks automatically once they link.";
 
 interface IncomingMessage {
   id: string;
@@ -30,6 +39,75 @@ interface IncomingMessage {
   reply: (text: string) => Promise<void>;
   tweetUrl?: string;
   source: "mention" | "dm";
+  // The post this message is a reply to, if any -- only ever set for
+  // mentions (DMs have no concept of replying to a tweet). Giveaway
+  // requires this; send/swap ignore it entirely.
+  repliedToTweetId?: string | null;
+}
+
+// Returns true if this message was fully handled here (either a deposit was
+// offered for signing, or a duplicate was silently ignored) -- false means
+// the handle doesn't resolve (genuinely doesn't exist on X, or the lookup
+// itself failed), so the caller falls through to its normal "target not
+// found" decline instead of reserving anything. That catch matters: this
+// function is called from inside pollMentions()'s per-message loop, which
+// has no per-iteration try/catch of its own -- letting a transient X API
+// error (not just a clean 404) propagate out of here would abort the rest
+// of that poll batch *before* the cursor advances, so the same messages
+// get reprocessed on every subsequent poll instead of just this one call
+// getting skipped.
+async function reserveUnclaimedAllocation(
+  msg: IncomingMessage,
+  ctx: Record<string, unknown>,
+  requesterWallet: `0x${string}`,
+  command: NonNullable<ReturnType<typeof parseCommand>>,
+): Promise<boolean> {
+  let target: { id: string; username: string } | null;
+  try {
+    target = await getUserByUsername(command.targetValue);
+  } catch (err) {
+    log.warn("x_bot_allocation_lookup_failed", {
+      ...ctx,
+      targetValue: command.targetValue,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return false;
+  }
+  if (!target) return false;
+
+  // Builds a real ClaimEscrow deposit for the SENDER to sign -- the
+  // allocation record itself is only created once this actually broadcasts
+  // successfully (routes/pendingTransactions.ts), so it never represents an
+  // unfunded promise.
+  const depositPlan = await buildUnsignedDeposit(command.token, requesterWallet, target.id, command.amount);
+  const created = await createPendingDeposit({
+    requestedByWallet: requesterWallet,
+    requestedByXUserId: msg.authorId,
+    sourceRef: msg.id,
+    targetXUserId: target.id,
+    targetXHandle: target.username,
+    token: command.token,
+    amount: command.amount,
+    amountBaseUnits: depositPlan.amountBaseUnits,
+    approvals: depositPlan.approvals,
+    deposit: depositPlan.deposit,
+    tweetUrl: msg.tweetUrl,
+  });
+
+  if (created) {
+    log.info("x_bot_deposit_created", {
+      ...ctx,
+      pendingTransactionId: created.id,
+      targetXUserId: target.id,
+      targetHandle: target.username,
+      token: command.token,
+      amount: command.amount,
+    });
+    await msg.reply(REPLY_ALLOCATION_RESERVED);
+  } else {
+    log.info("x_bot_message_ignored", { ...ctx, reason: "duplicate_source_ref" });
+  }
+  return true;
 }
 
 async function handlePaymentCommand(
@@ -40,6 +118,14 @@ async function handlePaymentCommand(
 ): Promise<void> {
   const resolvedWallet = await resolveTargetWallet(command);
   if (!resolvedWallet) {
+    // An unlinked @handle isn't necessarily a dead end -- if the account is
+    // real, reserve the send as an unclaimed allocation instead of dropping
+    // it (Wave 1). A genuinely bad handle (typo, doesn't exist) falls
+    // through to the normal decline below.
+    if (command.targetType === "x_account") {
+      const reserved = await reserveUnclaimedAllocation(msg, ctx, requesterWallet, command);
+      if (reserved) return;
+    }
     log.info("x_bot_message_declined", {
       ...ctx,
       reason: "target_not_found",
@@ -159,6 +245,14 @@ async function handleSwapCommand(
   }
 }
 
+// Wraps the whole per-message flow in one catch-all. pollMentions()/
+// pollDirectMessages() process a batch in a plain for-loop with no
+// per-iteration try/catch of their own, and only advance their cursor
+// *after* every message in the batch has been handled -- an uncaught error
+// from any single message (a bad handle lookup, a transient X API hiccup,
+// anything) would otherwise abort the rest of the batch and the cursor
+// advance with it, so every message in it gets reprocessed on every
+// subsequent poll instead of just this one being skipped.
 async function handleMessage(msg: IncomingMessage): Promise<void> {
   // Base context attached to every decision log for this message so a single
   // id/source can be grepped to see exactly what the bot did and why. Tweet
@@ -166,27 +260,107 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
   // parse misses; DM text is private, so it's deliberately left out here.
   const ctx = { source: msg.source, id: msg.id, authorId: msg.authorId };
 
-  const command = parseCommand(msg.text);
-  const swapCommand = command ? null : parseSwapCommand(msg.text);
-  if (!command && !swapCommand) {
-    log.info("x_bot_message_ignored", {
-      ...ctx,
-      reason: "unparseable",
-      textSnippet: msg.source === "mention" ? msg.text.slice(0, 80) : undefined,
-    });
-    return; // not a recognized command -- silently ignore, no reply
-  }
+  try {
+    const command = parseCommand(msg.text);
+    const swapCommand = command ? null : parseSwapCommand(msg.text);
+    const causeCommand = command || swapCommand ? null : parseCauseCommand(msg.text);
+    const donateToName = command || swapCommand || causeCommand ? null : parseDonateToName(msg.text);
+    const escrowCommand =
+      command || swapCommand || causeCommand || donateToName ? null : parseEscrowCommand(msg.text);
+    const privateSendCommand =
+      command || swapCommand || causeCommand || donateToName || escrowCommand
+        ? null
+        : parsePrivateSendCommand(msg.text);
+    const claimCommand =
+      command || swapCommand || causeCommand || donateToName || escrowCommand || privateSendCommand
+        ? false
+        : isClaimCommand(msg.text);
 
-  const requesterWallet = await getWalletByXUserId(msg.authorId);
-  if (!requesterWallet) {
-    log.info("x_bot_message_ignored", { ...ctx, reason: "sender_not_linked" });
-    return; // not a linked TagioPay user -- silently ignore, no reply
-  }
+    if (command || swapCommand || causeCommand || donateToName || escrowCommand || privateSendCommand || claimCommand) {
+      const requesterWallet = await getWalletByXUserId(msg.authorId);
+      if (!requesterWallet) {
+        log.info("x_bot_message_ignored", { ...ctx, reason: "sender_not_linked" });
+        return; // not a linked TagioPay user -- silently ignore, no reply
+      }
+      if (command) {
+        await handlePaymentCommand(msg, ctx, requesterWallet as `0x${string}`, command);
+      } else if (swapCommand) {
+        await handleSwapCommand(msg, ctx, requesterWallet as `0x${string}`, swapCommand);
+      } else if (causeCommand) {
+        await handleCauseCommand(causeCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+      } else if (donateToName) {
+        await handleDonateToName(donateToName, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+      } else if (escrowCommand) {
+        await handleEscrowCommand(escrowCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+      } else if (privateSendCommand) {
+        await handlePrivateSendCommand(privateSendCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+      } else {
+        await handleClaimCommand(requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+      }
+      return;
+    }
 
-  if (command) {
-    await handlePaymentCommand(msg, ctx, requesterWallet as `0x${string}`, command);
-  } else {
-    await handleSwapCommand(msg, ctx, requesterWallet as `0x${string}`, swapCommand!);
+    // Neither deterministic parser matched -- try Groq for giveaway/airdrop
+    // (Wave 3/4). Same linked-sender gate as send/swap: an unlinked user's
+    // giveaway/airdrop request is silently ignored, not just because they
+    // can't fund it, but so a stranger can't burn a Groq call on this bot's
+    // behalf just by mentioning it.
+    const requesterWallet = await getWalletByXUserId(msg.authorId);
+    if (!requesterWallet) {
+      log.info("x_bot_message_ignored", { ...ctx, reason: "sender_not_linked" });
+      return;
+    }
+
+    const openClarification = await getOpenClarification(msg.authorId);
+    const intent = await parseIntent(
+      msg.text,
+      openClarification
+        ? { partialIntent: openClarification.partialIntent, missingSlot: openClarification.missingSlot }
+        : undefined,
+    );
+
+    if (intent.action === "unrecognized") {
+      log.info("x_bot_message_ignored", {
+        ...ctx,
+        reason: "unparseable",
+        textSnippet: msg.source === "mention" ? msg.text.slice(0, 80) : undefined,
+      });
+      return; // not a recognized command -- silently ignore, no reply
+    }
+
+    if (intent.clarificationNeeded) {
+      await saveClarification({
+        xUserId: msg.authorId,
+        source: msg.source,
+        sourceRef: msg.id,
+        partialIntent: { ...intent },
+        missingSlot: intent.clarificationNeeded,
+      });
+      await msg.reply(CLARIFICATION_REPLIES[intent.clarificationNeeded]);
+      log.info("x_bot_clarification_asked", { ...ctx, missingSlot: intent.clarificationNeeded });
+      return;
+    }
+
+    if (openClarification) await clearClarification(msg.authorId);
+
+    if (intent.action === "giveaway") {
+      await handleGiveawayIntent(
+        intent,
+        msg.repliedToTweetId ?? null,
+        msg.id,
+        requesterWallet as `0x${string}`,
+        msg.authorId,
+        msg.reply,
+      );
+    } else if (intent.airdropMode === "hold") {
+      await handleHoldAirdrop(intent, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+    } else if (intent.airdropMode === "bullpost") {
+      await handleBullpostAirdrop(intent, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+    } else {
+      log.info("x_bot_message_ignored", { ...ctx, reason: "airdrop_mode_unclear" });
+    }
+  } catch (err) {
+    log.error("x_bot_message_handling_failed", { ...ctx, error: err instanceof Error ? err.message : String(err) });
   }
 }
 
@@ -207,6 +381,7 @@ export async function pollMentions(): Promise<void> {
       reply: (text) => replyToMention(mention.id, text),
       tweetUrl: `https://x.com/i/status/${mention.id}`,
       source: "mention",
+      repliedToTweetId: mention.repliedToTweetId,
     });
   }
   const lastSeenId = ordered[ordered.length - 1].id;

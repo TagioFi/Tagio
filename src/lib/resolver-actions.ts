@@ -5,6 +5,7 @@ import {
   erc20Abi,
   keccak256,
   parseEther,
+  parseUnits,
   stringToBytes,
   zeroAddress,
   zeroHash,
@@ -20,7 +21,17 @@ import {
   waitForTransactionReceipt,
   writeContract,
 } from "wagmi/actions";
-import { RESOLVER_ADDRESS, resolverAbi, robinhoodChain } from "./chain";
+import {
+  RESOLVER_ADDRESS,
+  resolverAbi,
+  robinhoodChain,
+  CAUSE_REGISTRY_ADDRESS,
+  causeRegistryAbi,
+  SIMPLE_ESCROW_ADDRESS,
+  simpleEscrowAbi,
+  USDG_ADDRESS,
+  USDG_DECIMALS,
+} from "./chain";
 import { normalizeHashtag, confirmTransaction } from "./tagio";
 import { wagmiConfig } from "./wagmi";
 
@@ -219,6 +230,172 @@ export async function updateMetadataOnchain(input: {
   return hash;
 }
 
+/** Wave 5: donations/crowdfunding, direct-from-dapp (no bot round trip needed). */
+export async function createCauseOnchain(input: {
+  name: string;
+  organizer: `0x${string}`;
+  goal: string;
+  token: "native" | "usdg";
+}): Promise<Hash> {
+  await ensureWallet();
+  const decimals = input.token === "native" ? 18 : USDG_DECIMALS;
+  const goal = parseUnits(input.goal, decimals);
+  const tokenAddress = input.token === "native" ? zeroAddress : USDG_ADDRESS;
+
+  const hash = await writeContract(wagmiConfig, {
+    abi: causeRegistryAbi,
+    address: CAUSE_REGISTRY_ADDRESS,
+    functionName: "createCause",
+    args: [input.name, input.organizer, goal, tokenAddress],
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(hash);
+  return hash;
+}
+
+export async function donateToCauseOnchain(input: {
+  causeId: number;
+  amount: string;
+  token: "native" | "usdg";
+}): Promise<Hash> {
+  const owner = await ensureWallet();
+  const decimals = input.token === "native" ? 18 : USDG_DECIMALS;
+  const amount = parseUnits(input.amount, decimals);
+
+  if (input.token === "usdg") {
+    const allowance = await readContract(wagmiConfig, {
+      abi: erc20Abi,
+      address: USDG_ADDRESS,
+      functionName: "allowance",
+      args: [owner, CAUSE_REGISTRY_ADDRESS],
+    });
+    if (allowance < amount) {
+      const approveHash = await writeContract(wagmiConfig, {
+        abi: erc20Abi,
+        address: USDG_ADDRESS,
+        functionName: "approve",
+        args: [CAUSE_REGISTRY_ADDRESS, amount],
+        chainId: robinhoodChain.id,
+      });
+      await waitForReceiptOrThrow(approveHash);
+    }
+  }
+
+  const hash = await writeContract(wagmiConfig, {
+    abi: causeRegistryAbi,
+    address: CAUSE_REGISTRY_ADDRESS,
+    functionName: "donate",
+    args: [BigInt(input.causeId), amount],
+    value: input.token === "native" ? amount : 0n,
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(hash);
+  return hash;
+}
+
+export async function withdrawFromCauseOnchain(input: {
+  causeId: number;
+  amount: string;
+  token: "native" | "usdg";
+  proofUrl: string;
+}): Promise<Hash> {
+  await ensureWallet();
+  const decimals = input.token === "native" ? 18 : USDG_DECIMALS;
+  const amount = parseUnits(input.amount, decimals);
+
+  const hash = await writeContract(wagmiConfig, {
+    abi: causeRegistryAbi,
+    address: CAUSE_REGISTRY_ADDRESS,
+    functionName: "withdraw",
+    args: [BigInt(input.causeId), amount, input.proofUrl],
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(hash);
+  return hash;
+}
+
+/**
+ * Wave 6: generic escrow, direct-from-dapp. Bot-created escrows (via
+ * $escrow) go through the same contract; this lets a user create/act on one
+ * straight from the dashboard without going through X at all.
+ */
+export async function createEscrowOnchain(input: {
+  counterparty: `0x${string}`;
+  amount: string;
+  token: "native" | "usdg";
+  description: string;
+}): Promise<Hash> {
+  const owner = await ensureWallet();
+  const decimals = input.token === "native" ? 18 : USDG_DECIMALS;
+  const amount = parseUnits(input.amount, decimals);
+  const tokenAddress = input.token === "native" ? zeroAddress : USDG_ADDRESS;
+
+  if (input.token === "usdg") {
+    const allowance = await readContract(wagmiConfig, {
+      abi: erc20Abi,
+      address: USDG_ADDRESS,
+      functionName: "allowance",
+      args: [owner, SIMPLE_ESCROW_ADDRESS],
+    });
+    if (allowance < amount) {
+      const approveHash = await writeContract(wagmiConfig, {
+        abi: erc20Abi,
+        address: USDG_ADDRESS,
+        functionName: "approve",
+        args: [SIMPLE_ESCROW_ADDRESS, amount],
+        chainId: robinhoodChain.id,
+      });
+      await waitForReceiptOrThrow(approveHash);
+    }
+  }
+
+  const hash = await writeContract(wagmiConfig, {
+    abi: simpleEscrowAbi,
+    address: SIMPLE_ESCROW_ADDRESS,
+    functionName: "create",
+    args: [input.counterparty, amount, tokenAddress, input.description],
+    value: input.token === "native" ? amount : 0n,
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(hash);
+  return hash;
+}
+
+async function callEscrow(
+  functionName: "accept" | "cancelBeforeAccept" | "release" | "forceRelease" | "refundAfterDeliverDeadline",
+  escrowId: number,
+): Promise<Hash> {
+  await ensureWallet();
+  const hash = await writeContract(wagmiConfig, {
+    abi: simpleEscrowAbi,
+    address: SIMPLE_ESCROW_ADDRESS,
+    functionName,
+    args: [BigInt(escrowId)],
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(hash);
+  return hash;
+}
+
+export const acceptEscrowOnchain = (escrowId: number) => callEscrow("accept", escrowId);
+export const cancelEscrowOnchain = (escrowId: number) => callEscrow("cancelBeforeAccept", escrowId);
+export const releaseEscrowOnchain = (escrowId: number) => callEscrow("release", escrowId);
+export const forceReleaseEscrowOnchain = (escrowId: number) => callEscrow("forceRelease", escrowId);
+export const refundEscrowOnchain = (escrowId: number) => callEscrow("refundAfterDeliverDeadline", escrowId);
+
+export async function deliverEscrowOnchain(input: { escrowId: number; proofUrl: string }): Promise<Hash> {
+  await ensureWallet();
+  const hash = await writeContract(wagmiConfig, {
+    abi: simpleEscrowAbi,
+    address: SIMPLE_ESCROW_ADDRESS,
+    functionName: "deliver",
+    args: [BigInt(input.escrowId), input.proofUrl],
+    chainId: robinhoodChain.id,
+  });
+  await waitForReceiptOrThrow(hash);
+  return hash;
+}
+
 /**
  * Signs and broadcasts an already-built unsigned transaction -- e.g. one the
  * X bot created after a "send X to Y" mention/DM. Plain to/data/value, no ABI
@@ -282,6 +459,33 @@ export async function signAndConfirmSwapPlan(plan: {
   return swapHash;
 }
 
+/**
+ * Signs an arbitrary ordered sequence of transactions, waiting for and
+ * verifying every receipt along the way -- generalizes
+ * signAndConfirmSwapPlan's approvals-then-swap pattern to giveaway/airdrop
+ * disperse rows, which can have more than one "final" step (a BatchDisperser
+ * call for linked winners, then one ClaimEscrow deposit per unlinked winner
+ * -- see buildGiveawayPayout in the backend's txBuilder.ts). Returns the
+ * last step's hash, since that's the one the backend's /broadcast endpoint
+ * needs to verify -- earlier steps in the sequence are already individually
+ * receipt-checked here.
+ */
+export async function signAndConfirmSteps(steps: UnsignedTxLike[]): Promise<Hash> {
+  await ensureWallet();
+  let lastHash: Hash | null = null;
+  for (const step of steps) {
+    lastHash = await sendTransaction(wagmiConfig, {
+      to: step.to as `0x${string}`,
+      data: step.data as `0x${string}`,
+      value: BigInt(step.value || "0"),
+      chainId: robinhoodChain.id,
+    });
+    await waitForReceiptOrThrow(lastHash);
+  }
+  if (!lastHash) throw new Error("No steps to sign");
+  return lastHash;
+}
+
 const REVERT_MESSAGES: Record<string, string> = {
   HashtagAlreadyExists: "That hashtag is already registered and active",
   InvalidHashtag: "Invalid hashtag — 3–32 lowercase letters, numbers, or underscores",
@@ -296,6 +500,21 @@ const REVERT_MESSAGES: Record<string, string> = {
   FeeTransferFailed: "Fee payment failed",
   PaymentFailed: "Payment transfer failed",
   TokenDistributionFailed: "Split distribution failed",
+  // CauseRegistry (Wave 5)
+  CauseNotFound: "Couldn't find that cause",
+  NotOrganizer: "Only that cause's organizer can withdraw from it",
+  IncorrectNativeValue: "The ETH sent doesn't match the amount",
+  InsufficientBalance: "That cause doesn't have enough raised to withdraw that much",
+  EmptyName: "Cause name can't be empty",
+  ZeroAddress: "A valid wallet address is required",
+  // SimpleEscrow (Wave 6)
+  EscrowNotFound: "Couldn't find that escrow",
+  NotCreator: "Only the escrow's creator can do that",
+  NotCounterparty: "Only the escrow's counterparty can do that",
+  WrongStatus: "That escrow isn't in the right state for this action",
+  DeliverDeadlineNotPassed: "The deliver deadline hasn't passed yet",
+  ReleaseDeadlineNotPassed: "The release grace period hasn't passed yet",
+  NativeTransferFailed: "ETH transfer failed",
 };
 
 export function friendlyError(err: unknown): string {

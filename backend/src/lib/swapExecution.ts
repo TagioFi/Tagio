@@ -127,17 +127,22 @@ const SWAP_ROUTER_ABI = [
   },
 ] as const;
 
-async function buildApprovalIfNeeded(
+// Exported so other unsigned-tx builders needing a plain ERC20 approval
+// (e.g. txBuilder.ts's giveaway/airdrop disperse builder, approving
+// BatchDisperser as spender) can reuse the same allowance-check-then-build
+// logic instead of duplicating it against a different spender.
+export async function buildApprovalIfNeeded(
   client: PublicClient,
   token: `0x${string}`,
   owner: `0x${string}`,
+  spender: `0x${string}`,
   amountNeeded: bigint,
 ): Promise<UnsignedTx | null> {
   const currentAllowance = await client.readContract({
     address: token,
     abi: erc20Abi,
     functionName: "allowance",
-    args: [owner, config.uniswap.v3SwapRouterAddress],
+    args: [owner, spender],
   });
   if (currentAllowance >= amountNeeded) return null;
 
@@ -146,7 +151,7 @@ async function buildApprovalIfNeeded(
     data: encodeFunctionData({
       abi: erc20Abi,
       functionName: "approve",
-      args: [config.uniswap.v3SwapRouterAddress, amountNeeded],
+      args: [spender, amountNeeded],
     }),
     value: "0",
     chainId: config.robinhood.chainId,
@@ -433,9 +438,9 @@ export async function planSwap(
       functionName: "multicall",
       args: [deadline, [swapCall, unwrapCall]],
     });
-    approval = await buildApprovalIfNeeded(client, tokenIn.address, recipient, amountInWei);
+    approval = await buildApprovalIfNeeded(client, tokenIn.address, recipient, config.uniswap.v3SwapRouterAddress, amountInWei);
   } else {
-    approval = await buildApprovalIfNeeded(client, tokenIn.address, recipient, amountInWei);
+    approval = await buildApprovalIfNeeded(client, tokenIn.address, recipient, config.uniswap.v3SwapRouterAddress, amountInWei);
   }
 
   return {

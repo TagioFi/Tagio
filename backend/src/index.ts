@@ -4,6 +4,10 @@ import { runMigrations } from "./db/migrate";
 import { config } from "./config";
 import { pollMentions, pollDirectMessages } from "./services/x/poller";
 import { XApiError } from "./services/x/botClient";
+import { sweepExpiredAllocations } from "./services/x/unclaimedAllocationService";
+import { sweepExpiredClarifications } from "./services/x/clarificationService";
+import { checkWaitingGiveaways } from "./services/x/giveawayHandler";
+import { runKeeperCycle } from "./services/x/keeperService";
 import { log } from "./lib/logger";
 
 // 402 (credits/billing exhausted) and 429 (rate limited) mean "stop hitting this
@@ -54,11 +58,25 @@ function startXBotPolling(): void {
 
   startPollLoop("mentions", config.x.mentionsPollIntervalMs, pollMentions);
   startPollLoop("dms", config.x.dmPollIntervalMs, pollDirectMessages);
+  startPollLoop("giveaway-waiter", config.x.giveawayWaiterPollIntervalMs, checkWaitingGiveaways);
 }
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+const FIFTEEN_MINUTES_MS = 15 * 60 * 1000;
 
 async function main() {
   await runMigrations();
   startXBotPolling();
+  startPollLoop("unclaimed-allocations-sweep", ONE_DAY_MS, sweepExpiredAllocations);
+  // Much shorter interval than the allocations sweep -- clarifications expire
+  // in 30 minutes, not 120 days, so a daily sweep would leave stale rows
+  // sitting around needlessly long (harmless functionally, since
+  // getOpenClarification already filters by expires_at, but wasteful).
+  startPollLoop("pending-clarifications-sweep", FIFTEEN_MINUTES_MS, sweepExpiredClarifications);
+  // Runs unconditionally -- runKeeperCycle no-ops (logged) when
+  // KEEPER_PRIVATE_KEY isn't configured, same "safe to always start" pattern
+  // as startXBotPolling's own internal guards.
+  startPollLoop("private-send-keeper", config.keeper.pollIntervalMs, runKeeperCycle);
   app.listen(config.port, () => {
     console.log(`tagiopay backend listening on :${config.port}`);
   });

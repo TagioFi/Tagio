@@ -6,9 +6,12 @@ import {
   markBroadcast,
   markCancelled,
 } from "../services/x/pendingTransactionService";
+import { createUnclaimedAllocation, markAllocationsClaimed } from "../services/x/unclaimedAllocationService";
+import { markPrivateSendSent, markPrivateSendClaimed } from "../services/x/privateSendService";
 import { getTransactionReceipt } from "../services/onchain/client";
 import { postReceiptReply } from "../services/x/receiptReply";
 import type { Hash } from "viem";
+import type { BotToken } from "../services/x/commandParser";
 
 const router = Router();
 
@@ -46,6 +49,34 @@ router.post("/transactions/pending/:id/broadcast", requireAuth, async (req: Auth
     }
 
     await markBroadcast(pending.id, tx_hash);
+
+    // The escrow deposit/claim only becomes a real, book-kept fact once the
+    // transaction that moves the actual funds has been confirmed successful
+    // on-chain -- not when the pending row was merely created. This is what
+    // fixes Wave 1's original gap: an unclaimed_allocations row never exists
+    // without real escrowed funds behind it, and a claim never gets marked
+    // settled until the sweep that pays it out actually lands.
+    if (pending.kind === "deposit" && pending.target_x_user_id) {
+      await createUnclaimedAllocation({
+        xUserId: pending.target_x_user_id,
+        xHandle: pending.target_value,
+        token: pending.token as BotToken,
+        amount: pending.amount,
+        amountBaseUnits: pending.amount_base_units,
+        source: "direct-send",
+        sourceRef: pending.source_ref ?? undefined,
+      });
+    } else if (pending.kind === "claim" && pending.target_x_user_id) {
+      await markAllocationsClaimed(pending.target_x_user_id, pending.token as BotToken);
+    } else if (pending.kind === "psend") {
+      // target_value holds the commitment (see createPendingPrivateSend) --
+      // only from here on is this allocation real enough for the keeper to
+      // attempt claiming.
+      await markPrivateSendSent(pending.target_value, tx_hash);
+    } else if (pending.kind === "psend_claim") {
+      await markPrivateSendClaimed(pending.target_value, tx_hash, "self");
+    }
+
     res.json({ synced: true });
 
     // Only mention-triggered requests have a tweet_url (source_ref is that

@@ -348,6 +348,10 @@ h1.headline .l2 .accent{ color:var(--green); }
 @keyframes fadeIn{ from{ opacity:0; transform:translateY(0.6rem); } to{ opacity:1; transform:none; } }
 @keyframes authSpin{ to{ transform:rotate(360deg); } }
 .auth-spinner{ width:2rem; height:2rem; border-radius:50%; border:3px solid rgba(200,232,96,0.25); border-top-color:var(--green); animation:authSpin 0.8s linear infinite; }
+/* Unlike .scrim (mobile-drawer-only, see the @media block below), this
+   overlay needs to work at every viewport width -- used for the pending-
+   transactions modal. */
+.modal-scrim{ position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:70; display:flex; align-items:center; justify-content:center; padding:1rem; }
 @media (max-width:960px){
   #app .grid.stats{ grid-template-columns:repeat(2,1fr); }
   #app .grid.two{ grid-template-columns:1fr; }

@@ -23,6 +23,16 @@ export interface XMention {
   id: string;
   text: string;
   authorId: string;
+  conversationId: string;
+  // The post this mention is a reply to, if any -- null for a bare mention
+  // with no reply context. Giveaway requires this (must reply to the post
+  // whose engagers are being checked); a plain send/swap command ignores it.
+  repliedToTweetId: string | null;
+}
+
+export interface XUserRef {
+  id: string;
+  username: string;
 }
 
 export interface XDirectMessage {
@@ -78,18 +88,116 @@ export async function getBotUserId(): Promise<string> {
   return cachedBotUserId;
 }
 
+// Used to validate a bare @handle from a "send X to @handle" command that
+// isn't a linked TagioPay user yet -- confirms the account is real (not a
+// typo) and gets its stable numeric id, so an unclaimed_allocations row can
+// be keyed on x_user_id rather than a handle that could change later.
+//
+// Verified against the live API: a nonexistent-but-validly-shaped username
+// comes back as HTTP 200 with no `data` field (an `errors` array instead),
+// not a 404 -- this endpoint apparently never 404s for this lookup. Checking
+// for a missing `data` is the only reliable "doesn't exist" signal here.
+export async function getUserByUsername(username: string): Promise<{ id: string; username: string } | null> {
+  const normalized = username.replace(/^@/, "");
+  const body = await authedFetch(`/users/by/username/${encodeURIComponent(normalized)}`);
+  if (!body.data) return null;
+  return { id: body.data.id as string, username: body.data.username as string };
+}
+
 // Verified against a live account: X only includes author_id on a tweet object
 // when explicitly requested via tweet.fields -- without it, every mention's
 // authorId comes back undefined, and every mention silently fails the
 // "is this a linked user" check no matter who sent it.
 export async function listNewMentions(sinceId: string | null): Promise<XMention[]> {
   const botId = await getBotUserId();
-  const params = new URLSearchParams({ max_results: "20", "tweet.fields": "author_id" });
+  const params = new URLSearchParams({
+    max_results: "20",
+    "tweet.fields": "author_id,conversation_id,referenced_tweets",
+  });
   if (sinceId) params.set("since_id", sinceId);
 
   const body = await authedFetch(`/users/${botId}/mentions?${params}`);
-  const tweets = (body.data ?? []) as Array<{ id: string; text: string; author_id: string }>;
-  return tweets.map((t) => ({ id: t.id, text: t.text, authorId: t.author_id }));
+  const tweets = (body.data ?? []) as Array<{
+    id: string;
+    text: string;
+    author_id: string;
+    conversation_id: string;
+    referenced_tweets?: Array<{ type: string; id: string }>;
+  }>;
+  return tweets.map((t) => ({
+    id: t.id,
+    text: t.text,
+    authorId: t.author_id,
+    conversationId: t.conversation_id,
+    repliedToTweetId: t.referenced_tweets?.find((r) => r.type === "replied_to")?.id ?? null,
+  }));
+}
+
+// The giveaway's engagement-requirement pool -- who liked/retweeted/replied
+// to the target post. All three return real X user_id + username pairs
+// directly (liking_users/retweeted_by are user-object endpoints already;
+// replies need a conversation_id search since there's no direct "get
+// replies to tweet X" endpoint).
+export async function getLikingUsers(tweetId: string): Promise<XUserRef[]> {
+  const body = await authedFetch(`/tweets/${tweetId}/liking_users?max_results=100`);
+  const users = (body.data ?? []) as Array<{ id: string; username: string }>;
+  return users.map((u) => ({ id: u.id, username: u.username }));
+}
+
+export async function getRetweetedBy(tweetId: string): Promise<XUserRef[]> {
+  const body = await authedFetch(`/tweets/${tweetId}/retweeted_by?max_results=100`);
+  const users = (body.data ?? []) as Array<{ id: string; username: string }>;
+  return users.map((u) => ({ id: u.id, username: u.username }));
+}
+
+export async function getReplyAuthors(tweetId: string): Promise<XUserRef[]> {
+  const params = new URLSearchParams({
+    query: `conversation_id:${tweetId} is:reply`,
+    max_results: "100",
+    "tweet.fields": "author_id",
+    expansions: "author_id",
+    "user.fields": "username",
+  });
+  const body = await authedFetch(`/tweets/search/recent?${params}`);
+  const users = (body.includes?.users ?? []) as Array<{ id: string; username: string }>;
+  return users.map((u) => ({ id: u.id, username: u.username }));
+}
+
+export interface XPostEngagement {
+  authorId: string;
+  authorUsername: string;
+  likeCount: number;
+  retweetCount: number;
+  replyCount: number;
+}
+
+// Bullpost-airdrop's candidate pool -- recent posts matching a keyword,
+// with per-post engagement counts for the weighted-share formula (see
+// airdropHandler.ts). Hard-capped to X's own 7-day recent-search window --
+// a real API constraint, not a choice made here.
+export async function searchRecentPosts(keyword: string): Promise<XPostEngagement[]> {
+  const params = new URLSearchParams({
+    query: keyword,
+    max_results: "100",
+    "tweet.fields": "author_id,public_metrics",
+    expansions: "author_id",
+    "user.fields": "username",
+  });
+  const body = await authedFetch(`/tweets/search/recent?${params}`);
+  const tweets = (body.data ?? []) as Array<{
+    author_id: string;
+    public_metrics: { like_count: number; retweet_count: number; reply_count: number };
+  }>;
+  const users = (body.includes?.users ?? []) as Array<{ id: string; username: string }>;
+  const usernameById = new Map(users.map((u) => [u.id, u.username]));
+
+  return tweets.map((t) => ({
+    authorId: t.author_id,
+    authorUsername: usernameById.get(t.author_id) ?? t.author_id,
+    likeCount: t.public_metrics.like_count,
+    retweetCount: t.public_metrics.retweet_count,
+    replyCount: t.public_metrics.reply_count,
+  }));
 }
 
 // DM events endpoint has no since_id filter -- fetch the recent page and let the

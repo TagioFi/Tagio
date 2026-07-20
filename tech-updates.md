@@ -194,7 +194,131 @@ posts), the bot declines immediately rather than sitting on it.
 
 ---
 
-## Wave 5 — Telegram
+## Wave 5 — Donation / Crowdfunding
+
+"$donate 50usdg to @RedCross" for a direct donation (plain payment, reuses the
+existing send path); "$cause create/donate/leaderboard/withdraw" for a public,
+ongoing fundraiser with an on-chain paper trail. Confirmed direction (2026-07-20).
+
+- **Cause registry (new, lightweight -- not a hashtag)**
+  - Contracts: `CauseRegistry.sol` -- deliberately NOT another HashtagResolver.
+    A cause has no NFT, no subscription/expiry, no transfer -- just
+    `createCause(name, organizer, goal, token)`, `donate(causeId, amount)`
+    (tracks per-donor cumulative totals on-chain for the leaderboard, since
+    that needs to be trustlessly readable), and `withdraw(causeId, amount,
+    proofUrl)` restricted to the organizer, emitting a `Withdrawal(causeId,
+    amount, proofUrl)` event.
+  - Backend: `services/x/causeService.ts` wraps contract reads (progress,
+    leaderboard, remaining balance) for the bot's reply text and a dashboard
+    "Causes" view.
+  - Proof images: `CLOUDINARY_URL` is already in `backend/.env` (used
+    elsewhere in the QPay family) -- the bot/dashboard uploads the
+    organizer's attached image there and passes the resulting URL as
+    `proofUrl`, so "proof" is a real, permanent link, not a promise.
+
+- **Bot commands**: `$donate <amount><token> to "<cause name>"` / `to
+  @handle`, `$cause create "<name>" goal:<amount><token>
+  wallet:0x...`, `$cause donate <amount><token> #CAUSE-<id>`, `$cause
+  leaderboard #CAUSE-<id>`, `$cause withdraw #CAUSE-<id> <amount> "<reason>"`.
+  Deterministic parsing (new patterns in `commandParser.ts`) -- no Groq
+  needed, these commands are already fully structured.
+
+- **Frontend**: new "Causes" nav view -- browse/search active causes, a
+  progress bar + leaderboard per cause (mirrors the Trade page's read-then-
+  sign pattern), and a "create a cause" form for organizers.
+
+---
+
+## Wave 6 — Generic Escrow
+
+Create -> Accept -> Deliver -> Release, no on-chain dispute/jury system in
+v1 (confirmed 2026-07-20 -- if delivery/release goes wrong, there's no
+automated resolution yet; see the safety net note below). Generic, not
+sector-specific -- freelance work is the motivating case, but any bilateral
+"I pay once you deliver" agreement fits the same four states.
+
+- **Contract**: `SimpleEscrow.sol` -- `create(counterparty, amount, token,
+  description)` (creator funds it immediately, matching the image's "500USDC
+  locked" on creation), `accept(escrowId)` (counterparty-only, starts a
+  fixed deadline), `deliver(escrowId, proofUrl)` (counterparty-only, doesn't
+  move funds yet -- just marks delivered and stamps the proof link),
+  `release(escrowId)` (creator-only, pays the counterparty). A
+  `cancelBeforeAccept(escrowId)` refund path covers the "counterparty never
+  responds" case without needing a dispute system at all.
+  - **Known gap, flagged not hidden**: once accepted, there's no way to
+    resolve a disagreement (creator refuses to release, or counterparty
+    delivers nothing) other than off-chain conversation -- no jury, no
+    arbitrator. A cheap safety net worth adding even in v1: if the deadline
+    passes with no `deliver` call, auto-refund the creator; if delivered but
+    not released within a second grace window, allow the counterparty to
+    force-release to themselves (protects against a creator who ghosts after
+    receiving real work). Both are just timers, not real dispute resolution.
+  - Real dispute resolution (jury voting, reputation-weighted, the
+    `$dispute`/`$jury` flow from the original idea) is a substantially bigger
+    build -- deferred, not part of this wave.
+
+- **Bot commands**: `$escrow "<description>" <amount><token>
+  @counterparty`, `$accept #<id>`, `$deliver #<id> <proof url>`, `$release
+  #<id>`.
+
+- **Frontend**: an "Escrow" nav view listing your open escrows (both sides --
+  as creator and as counterparty), with the four action buttons surfaced
+  contextually based on status and which side of it you're on.
+
+---
+
+## Wave 7 — Private Send
+
+Shields the sender's identity from the *recipient* (confirmed 2026-07-20) --
+the recipient's wallet only ever shows a transfer from the pool contract,
+never the sender's own address. Worth being precise about what this is and
+isn't: this is practical/casual privacy, not cryptographic anonymity. A
+sophisticated chain-analysis observer could still potentially correlate a
+deposit and a later claim by timing and amount, since both transactions are
+fully public -- genuine unlinkability (immune to that kind of correlation)
+needs real cryptographic mixing (zk-SNARK commitment/nullifier schemes, e.g.
+Tornado-Cash-style), which is a much larger, separate undertaking and is
+explicitly out of scope for this wave. If real anonymity turns out to matter
+later, that's its own project, not an extension of this one.
+
+- **Contract**: `PrivateSendPool.sol` (ETH + USDG) -- `send(commitment)`
+  (payable/token-pulling, sender deposits tagged by an opaque commitment
+  rather than the recipient's address in cleartext), `claim(commitment,
+  proof)` (recipient -- or the keeper on their behalf -- withdraws to
+  whichever wallet the proof authorizes). Mechanically close to
+  `ClaimEscrow`, but keyed by a claim commitment instead of an X-user-id
+  hash, and with a keeper path added.
+
+- **The keeper (confirmed 2026-07-20)**: TagioPay's own backend runs an
+  automated keeper -- its own hot wallet -- that watches for claimable sends
+  and executes the claim on the recipient's behalf, so it lands in their
+  wallet without them lifting a finger. The keeper pays real gas from its
+  own wallet, funded by a **keeper fee the sender pays upfront**, bundled
+  into the send amount. This is explicitly not "gas sponsorship" in the
+  sense the rest of TagioPay avoids -- the sender is paying for the
+  service, just not literally denominated as their own gas. The recipient
+  can always self-claim manually instead (skip the keeper, pay their own
+  gas), so the non-custodial path never goes away entirely.
+  - **New operational surface, flagged plainly**: this is the first place
+    in TagioPay where the backend itself directly signs and broadcasts
+    value-moving transactions, not just off-chain attestations (compare
+    `ClaimEscrow`'s attestor, which only ever signs a message, never
+    broadcasts). The keeper wallet needs its own funding, balance
+    monitoring, and refill process, and is a real (bounded -- only its own
+    gas float, never user funds) custodial risk surface that didn't exist
+    anywhere else in the system before this wave.
+
+- **Bot commands**: `$psend <amount><token> to @handle` (sender-side,
+  deterministic parsing); claiming is automatic via the keeper, with a
+  manual `$claim` fallback for the recipient.
+
+- **Frontend**: a "Private send" option alongside Send, and claimable
+  private sends surface in the Pending tab like everything else, for the
+  manual-claim path.
+
+---
+
+## Wave 8 — Telegram
 
 The most self-contained wave — reuses the entire command-parser →
 target-resolver → tx-builder → pending-transaction core already built for X,
@@ -232,17 +356,72 @@ mandatory like X).
 ```
 GROQ_API_KEY=              # already added to backend/.env + Render, pending activation
 BLOCKSCOUT_API_KEY=        # already added to backend/.env, pending activation
-TELEGRAM_BOT_TOKEN=        # Wave 5, not yet created
+CLOUDINARY_URL=            # already in backend/.env -- reused by Wave 5/6's proof-of-withdrawal/delivery images
+CLAIM_ESCROW_ATTESTOR_PRIVATE_KEY=  # already in backend/.env -- never holds funds, never broadcasts
+KEEPER_PRIVATE_KEY=        # already in backend/.env -- separate dedicated key from the attestor above (2026-07-20), funded hot wallet, gas float only, never holds user funds -- deployed and wired, currently unfunded (see Status)
+TELEGRAM_BOT_TOKEN=        # Wave 8, not yet created
 ```
+
+## Status (updated 2026-07-20)
+
+Waves 1-7 are shipped: unclaimed transactions + `BatchDisperser.sol` +
+`ClaimEscrow.sol` (the latter added mid-Wave-1 to fix a real gap -- an
+unclaimed allocation needs actual escrowed funds behind it, not just a
+database row), the generic follow-up asker, giveaway, both airdrop modes,
+donation/crowdfunding (`CauseRegistry.sol`), generic escrow
+(`SimpleEscrow.sol`, Create→Accept→Deliver→Release, no dispute/jury in v1),
+and private send (`PrivateSendPool.sol`). All live-verified against the real
+deployed contracts and APIs, not just typechecked: contracts deployed to
+mainnet with bytecode/state read back, Foundry suites passing (135/135
+across all 7 contracts as of Wave 7), backend typecheck + test suite clean,
+backend routes live-hit against production Postgres/chain state (including
+a full create → mark-sent → claim round trip against real disposable test
+wallets, cleaned up after), frontend typecheck + build clean.
+
+Confirmed engagement-score formula for bullpost-airdrop (the one open item
+from the original plan): `score = likes×1 + replies×2 + retweets×3`, summed
+per unique poster across every matching post, top-N by score paid
+proportional to score. Public and stated here so it can be told to users
+verbatim.
+
+Wave 6's escrow deadlines are pinned: `DELIVER_WINDOW = 7 days` (creator can
+refund themselves if the counterparty accepts but never delivers),
+`RELEASE_GRACE = 3 days` (counterparty can force-release if the creator
+received delivery but won't release). Both are timers, not real dispute
+resolution -- they just stop either side holding funds hostage indefinitely.
+
+Wave 7's keeper fee is pinned, revised 2026-07-20 after further discussion:
+the fee is **always native ETH**, regardless of what token the send itself
+is in (a USDG-denominated fee can't refill an ETH gas float, which was the
+original design's real gap -- see `PrivateSendPool.sol`'s own doc comment).
+Formula: `keeperFeeWei = (0.1% of the send's value, in ETH) + (live gas
+price × 150000 gas)`. The percentage is TagioPay's margin; the gas term is
+what actually keeps the keeper solvent as gas prices move. For a USDG send,
+the 0.1% portion is converted to its ETH-equivalent via a live Uniswap quote
+(quoting just the fee-sized slice, not the whole send, so large sends don't
+inflate the estimate with extra price impact) -- verified live against real
+mainnet gas price and pool pricing for both a native and a USDG test send.
+This required a contract redesign (the original deploy paid the fee in
+whatever token was sent) and a redeploy -- safe, since nothing had moved
+through the prior deploy yet. `PrivateSendPool.sol` now lives at
+`0x1631b69a7aD282e3EC9246C3215f10a5812B50b4`; the keeper wallet
+(`0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9`) is wired up and its poll loop
+is running, but it's **currently unfunded (0 ETH)** -- confirmed live via a
+`keeper_low_balance` log line, which is the intended safe behavior (it skips
+claiming rather than trying and failing). Until it's funded, the manual
+`$claim` command and the dashboard's "Claim now" button are the only working
+claim path -- both are fully functional today, so private sends work end to
+end regardless, just without the automatic hands-free part until the keeper
+wallet gets some ETH.
 
 ## Open items to pin down when each wave starts (not blocking the plan, flagged
 so they don't get silently decided)
 
-- Exact engagement-score formula for bullpost-airdrop (likes/retweets/replies
-  weighting).
 - Whether Groq's structured-output schema needs versioning as new intents (e.g.
   future non-giveaway/airdrop commands) get added to `intentParser.ts`.
 - Whether `BatchDisperser` needs its own registration/fee model or is purely a
   utility contract with no fees (current assumption: no fees, TagioPay pays gas
   is out of scope per "no gas sponsorship" — the giveaway/airdrop *requester*
   signs and pays gas for the disperse tx, same as any other pending-tx sign-off).
+- Wave 7's keeper fee: exact pricing (flat fee vs. gas-cost-plus-margin) and
+  how low a keeper-wallet balance triggers an alert to refill it.

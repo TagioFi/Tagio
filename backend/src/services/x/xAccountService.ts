@@ -28,6 +28,21 @@ export async function getWalletByXHandle(handle: string): Promise<string | null>
   return rows.length === 0 ? null : rows[0].wallet_address;
 }
 
+// Same lookup as getWalletByXHandle but returns the full linked row --
+// dapp-triggered flows (e.g. a dashboard "Private Send" form) need the
+// recipient's xUserId too, and can resolve straight from our own x_accounts
+// table instead of an X API call, unlike the bot's own handler which only
+// has the raw @handle text to start from.
+export async function getLinkedXAccountByHandle(handle: string): Promise<XAccount | null> {
+  const normalized = handle.replace(/^@/, "").toLowerCase();
+  const { rows } = await pool.query(
+    "SELECT wallet_address, x_user_id, x_handle FROM x_accounts WHERE lower(x_handle) = $1",
+    [normalized],
+  );
+  if (rows.length === 0) return null;
+  return { walletAddress: rows[0].wallet_address, xUserId: rows[0].x_user_id, xHandle: rows[0].x_handle };
+}
+
 export async function linkXAccount(walletAddress: string, xUserId: string, xHandle: string): Promise<void> {
   await pool.query(
     `INSERT INTO x_accounts (wallet_address, x_user_id, x_handle)

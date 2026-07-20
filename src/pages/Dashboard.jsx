@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { getAccount } from 'wagmi/actions'
 import { formatUnits } from 'viem'
-import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances } from '../lib/tagio'
-import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, signAndConfirmSwapPlan, friendlyError } from '../lib/resolver-actions'
+import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend } from '../lib/tagio'
+import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, signAndConfirmSwapPlan, signAndConfirmSteps, createCauseOnchain, donateToCauseOnchain, withdrawFromCauseOnchain, createEscrowOnchain, acceptEscrowOnchain, cancelEscrowOnchain, deliverEscrowOnchain, releaseEscrowOnchain, forceReleaseEscrowOnchain, refundEscrowOnchain, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
 import { signInWithWallet, getAuthToken } from '../lib/auth'
@@ -47,6 +47,9 @@ const I = {
   clock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><polyline points="12 7 12 12 16 14" /></svg>,
   menu: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" /></svg>,
   trade: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 17l6-6 4 4 8-8" /><path d="M17 7h4v4" /></svg>,
+  heart: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" /></svg>,
+  shield: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z" /><polyline points="9 12 11 14 15 10" /></svg>,
+  lock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>,
 }
 
 /* ---------- helpers ---------- */
@@ -703,69 +706,433 @@ function Activity() {
   )
 }
 
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const causeToken = (c) => (c.token?.toLowerCase() === ZERO_ADDRESS ? 'native' : 'usdg')
+const causeDecimals = (c) => (causeToken(c) === 'native' ? 18 : 6)
+const fmtCauseAmount = (baseUnits, cause) => Number(formatUnits(BigInt(baseUnits), causeDecimals(cause))).toLocaleString('en-US', { maximumFractionDigits: 2 })
+
+function CauseCard({ cause, address, toast, onChanged }) {
+  const [expanded, setExpanded] = useState(false)
+  const [leaderboard, setLeaderboard] = useState(null)
+  const [donateAmount, setDonateAmount] = useState('')
+  const [withdrawAmount, setWithdrawAmount] = useState('')
+  const [withdrawReason, setWithdrawReason] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const raised = fmtCauseAmount(cause.totalRaised, cause)
+  const goal = fmtCauseAmount(cause.goal, cause)
+  const available = fmtCauseAmount((BigInt(cause.totalRaised) - BigInt(cause.totalWithdrawn)).toString(), cause)
+  const pct = Number(cause.goal) > 0 ? Math.min(100, (Number(cause.totalRaised) / Number(cause.goal)) * 100) : 0
+  const isOrganizer = address && cause.organizer?.toLowerCase() === address.toLowerCase()
+  const token = causeToken(cause) === 'native' ? 'ETH' : 'USDG'
+
+  const toggle = async () => {
+    if (!expanded && !leaderboard) {
+      try { setLeaderboard(await getCauseLeaderboard({ data: cause.causeId })) } catch { setLeaderboard([]) }
+    }
+    setExpanded((e) => !e)
+  }
+
+  const doDonate = async () => {
+    setBusy(true)
+    try {
+      await donateToCauseOnchain({ causeId: cause.causeId, amount: donateAmount, token: causeToken(cause) })
+      toast(`Donated ${donateAmount} ${token} to "${cause.name}"`)
+      setDonateAmount('')
+      onChanged()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const doWithdraw = async () => {
+    setBusy(true)
+    try {
+      await withdrawFromCauseOnchain({ causeId: cause.causeId, amount: withdrawAmount, token: causeToken(cause), proofUrl: withdrawReason })
+      toast(`Withdrew ${withdrawAmount} ${token} from "${cause.name}"`)
+      setWithdrawAmount('')
+      setWithdrawReason('')
+      onChanged()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card pad-lg" style={{ marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="eyebrow">#CAUSE-{cause.causeId}</div>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 500 }}>{cause.name}</h2>
+        </div>
+        <TokenIcon symbol={token} />
+      </div>
+      <div style={{ margin: '0.75rem 0 0.4rem', height: '0.5rem', background: 'var(--hairline)', borderRadius: '999px', overflow: 'hidden' }}>
+        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--green)' }} />
+      </div>
+      <div style={{ fontSize: '0.85rem', color: 'var(--ink-soft)' }}>{raised} / {goal} {token} raised · {available} {token} available</div>
+      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+        <input className="input" style={{ flex: 1 }} type="number" min="0" placeholder={`Amount (${token})`} value={donateAmount} onChange={(e) => setDonateAmount(e.target.value)} />
+        <button className="btn sm" disabled={busy || !donateAmount || parseFloat(donateAmount) <= 0} onClick={doDonate}>{busy ? 'Signing…' : 'Donate'}</button>
+        <button className="btn ghost sm" onClick={toggle}>{expanded ? 'Hide' : 'Leaderboard'}</button>
+      </div>
+      {expanded && (
+        <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--hairline)' }}>
+          {leaderboard === null ? (
+            <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>Loading…</p>
+          ) : leaderboard.length === 0 ? (
+            <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>No donors yet.</p>
+          ) : (
+            leaderboard.map((entry, i) => (
+              <div key={entry.donor} className="route-line" style={{ fontSize: '0.85rem' }}>
+                <span>{i + 1}. {short(entry.donor)}</span>
+                <span>{fmtCauseAmount(entry.total, cause)} {token}</span>
+              </div>
+            ))
+          )}
+          {isOrganizer && (
+            <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--hairline)' }}>
+              <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Withdraw (organizer)</div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <input className="input" style={{ flex: '1 1 8rem' }} type="number" min="0" placeholder="Amount" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} />
+                <input className="input" style={{ flex: '2 1 12rem' }} placeholder="Proof URL / reason" value={withdrawReason} onChange={(e) => setWithdrawReason(e.target.value)} />
+                <button className="btn sm" disabled={busy || !withdrawAmount || parseFloat(withdrawAmount) <= 0} onClick={doWithdraw}>{busy ? 'Signing…' : 'Withdraw'}</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CreateCause({ address, toast, onCreated }) {
+  const [name, setName] = useState('')
+  const [goal, setGoal] = useState('')
+  const [token, setToken] = useState('usdg')
+  const [busy, setBusy] = useState(false)
+
+  const doCreate = async () => {
+    setBusy(true)
+    try {
+      await createCauseOnchain({ name, organizer: address, goal, token })
+      toast(`Cause "${name}" created`)
+      setName(''); setGoal('')
+      onCreated()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
+      <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Start a cause</div>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <input className="input" style={{ flex: '2 1 12rem' }} placeholder="Cause name" value={name} onChange={(e) => setName(e.target.value)} />
+        <input className="input" style={{ flex: '1 1 8rem' }} type="number" min="0" placeholder="Goal" value={goal} onChange={(e) => setGoal(e.target.value)} />
+        <select className="input" style={{ flex: '0 1 7rem' }} value={token} onChange={(e) => setToken(e.target.value)}>
+          <option value="usdg">USDG</option>
+          <option value="native">ETH</option>
+        </select>
+        <button className="btn sm" disabled={busy || !name || !goal || !address} onClick={doCreate}>{busy ? 'Signing…' : 'Create'}</button>
+      </div>
+    </div>
+  )
+}
+
+function Causes({ toast }) {
+  const { address } = useAccount()
+  const query = useQuery({ queryKey: ['causes'], queryFn: getCauses })
+  const causes = query.data || []
+
+  return (
+    <div className="fade-in">
+      <CreateCause address={address} toast={toast} onCreated={() => query.refetch()} />
+      {query.isLoading ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>Loading causes…</p></div>
+      ) : causes.length === 0 ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No causes yet — start one above.</p></div>
+      ) : (
+        causes.map((cause) => (
+          <CauseCard key={cause.causeId} cause={cause} address={address} toast={toast} onChanged={() => query.refetch()} />
+        ))
+      )}
+    </div>
+  )
+}
+
+const escrowToken = (e) => (e.token?.toLowerCase() === ZERO_ADDRESS ? 'native' : 'usdg')
+const escrowDecimals = (e) => (escrowToken(e) === 'native' ? 18 : 6)
+const fmtEscrowAmount = (e) => Number(formatUnits(BigInt(e.amount), escrowDecimals(e))).toLocaleString('en-US', { maximumFractionDigits: 2 })
+const deadlinePassed = (unixSeconds) => Number(unixSeconds) > 0 && Date.now() >= Number(unixSeconds) * 1000
+
+function EscrowCard({ escrow, address, toast, onChanged }) {
+  const [proofUrl, setProofUrl] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const isCreator = address && escrow.creator?.toLowerCase() === address.toLowerCase()
+  const isCounterparty = address && escrow.counterparty?.toLowerCase() === address.toLowerCase()
+  const token = escrowToken(escrow) === 'native' ? 'ETH' : 'USDG'
+  const statusPill = escrow.status === 'Released' ? 'ok' : escrow.status === 'Cancelled' ? '' : 'warn'
+
+  const run = async (fn, label) => {
+    setBusy(true)
+    try {
+      await fn()
+      toast(label)
+      onChanged()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card pad-lg" style={{ marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="eyebrow">#{escrow.escrowId} · {isCreator ? 'You are the creator' : isCounterparty ? 'You are the counterparty' : ''}</div>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 500 }}>{escrow.description}</h2>
+        </div>
+        <span className={'pill ' + statusPill}>{escrow.status}</span>
+      </div>
+      <div style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', margin: '0.5rem 0' }}>
+        {fmtEscrowAmount(escrow)} {token} · counterparty {short(escrow.counterparty)} · creator {short(escrow.creator)}
+      </div>
+      {escrow.status === 'Delivered' && escrow.proofUrl && (
+        <div style={{ fontSize: '0.85rem', marginBottom: '0.5rem' }}>Proof: <a href={escrow.proofUrl} target="_blank" rel="noreferrer">{escrow.proofUrl}</a></div>
+      )}
+
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+        {escrow.status === 'Created' && isCreator && (
+          <button className="btn ghost sm" disabled={busy} onClick={() => run(() => cancelEscrowOnchain(escrow.escrowId), 'Escrow cancelled')}>{busy ? 'Signing…' : 'Cancel'}</button>
+        )}
+        {escrow.status === 'Created' && isCounterparty && (
+          <button className="btn sm" disabled={busy} onClick={() => run(() => acceptEscrowOnchain(escrow.escrowId), 'Escrow accepted')}>{busy ? 'Signing…' : 'Accept'}</button>
+        )}
+        {escrow.status === 'Accepted' && isCounterparty && (
+          <>
+            <input className="input" style={{ flex: '2 1 12rem' }} placeholder="Proof URL" value={proofUrl} onChange={(e) => setProofUrl(e.target.value)} />
+            <button className="btn sm" disabled={busy || !proofUrl} onClick={() => run(() => deliverEscrowOnchain({ escrowId: escrow.escrowId, proofUrl }), 'Marked delivered')}>{busy ? 'Signing…' : 'Deliver'}</button>
+          </>
+        )}
+        {escrow.status === 'Accepted' && isCreator && deadlinePassed(escrow.deliverDeadline) && (
+          <button className="btn ghost sm" disabled={busy} onClick={() => run(() => refundEscrowOnchain(escrow.escrowId), 'Refunded')}>{busy ? 'Signing…' : 'Refund (deliver deadline passed)'}</button>
+        )}
+        {escrow.status === 'Delivered' && isCreator && (
+          <button className="btn sm" disabled={busy} onClick={() => run(() => releaseEscrowOnchain(escrow.escrowId), 'Released to counterparty')}>{busy ? 'Signing…' : 'Release'}</button>
+        )}
+        {escrow.status === 'Delivered' && isCounterparty && deadlinePassed(escrow.releaseDeadline) && (
+          <button className="btn ghost sm" disabled={busy} onClick={() => run(() => forceReleaseEscrowOnchain(escrow.escrowId), 'Force-released')}>{busy ? 'Signing…' : 'Force release (grace passed)'}</button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function CreateEscrow({ address, toast, onCreated }) {
+  const [counterparty, setCounterparty] = useState('')
+  const [amount, setAmount] = useState('')
+  const [token, setToken] = useState('usdg')
+  const [description, setDescription] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const doCreate = async () => {
+    setBusy(true)
+    try {
+      await createEscrowOnchain({ counterparty, amount, token, description })
+      toast(`Escrow "${description}" created`)
+      setCounterparty(''); setAmount(''); setDescription('')
+      onCreated()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
+      <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Create an escrow</div>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <input className="input" style={{ flex: '2 1 14rem' }} placeholder="Description (e.g. Build 3 logos)" value={description} onChange={(e) => setDescription(e.target.value)} />
+        <input className="input" style={{ flex: '2 1 12rem' }} placeholder="Counterparty wallet (0x…)" value={counterparty} onChange={(e) => setCounterparty(e.target.value)} />
+        <input className="input" style={{ flex: '1 1 8rem' }} type="number" min="0" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <select className="input" style={{ flex: '0 1 7rem' }} value={token} onChange={(e) => setToken(e.target.value)}>
+          <option value="usdg">USDG</option>
+          <option value="native">ETH</option>
+        </select>
+        <button className="btn sm" disabled={busy || !counterparty || !amount || !description || !address} onClick={doCreate}>{busy ? 'Signing…' : 'Create'}</button>
+      </div>
+    </div>
+  )
+}
+
+function Escrow({ toast }) {
+  const { address } = useAccount()
+  const query = useQuery({ queryKey: ['escrows', address], queryFn: () => getEscrows({ data: address }), enabled: !!address })
+  const escrows = query.data || []
+
+  return (
+    <div className="fade-in">
+      <CreateEscrow address={address} toast={toast} onCreated={() => query.refetch()} />
+      {query.isLoading ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>Loading escrows…</p></div>
+      ) : escrows.length === 0 ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No escrows yet — create one above, or use <code>$escrow "desc" amount @handle</code> on X.</p></div>
+      ) : (
+        escrows.map((escrow) => (
+          <EscrowCard key={escrow.escrowId} escrow={escrow} address={address} toast={toast} onChanged={() => query.refetch()} />
+        ))
+      )}
+    </div>
+  )
+}
+
+function CreatePrivateSend({ toast, onCreated }) {
+  const [recipientHandle, setRecipientHandle] = useState('')
+  const [amount, setAmount] = useState('')
+  const [token, setToken] = useState('usdg')
+  const [busy, setBusy] = useState(false)
+
+  const doCreate = async () => {
+    const authToken = getAuthToken()
+    if (!authToken) { toast('Sign in with X first'); return }
+    setBusy(true)
+    try {
+      await createPrivateSend({ data: { token: authToken, recipientHandle: recipientHandle.replace(/^@/, ''), amount, sendToken: token } })
+      toast(`Private send to @${recipientHandle.replace(/^@/, '')} created — sign it in the Pending tab`)
+      setRecipientHandle(''); setAmount('')
+      onCreated()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
+      <div className="eyebrow" style={{ marginBottom: '0.6rem' }}>Send privately</div>
+      <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)', marginBottom: '0.75rem' }}>
+        The recipient's wallet only ever shows a transfer from TagioPay's pool, never yours. Practical privacy, not cryptographic anonymity — see the docs for what that does and doesn't cover.
+      </p>
+      <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+        <input className="input" style={{ flex: '2 1 12rem' }} placeholder="@recipient" value={recipientHandle} onChange={(e) => setRecipientHandle(e.target.value)} />
+        <input className="input" style={{ flex: '1 1 8rem' }} type="number" min="0" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
+        <select className="input" style={{ flex: '0 1 7rem' }} value={token} onChange={(e) => setToken(e.target.value)}>
+          <option value="usdg">USDG</option>
+          <option value="native">ETH</option>
+        </select>
+        <button className="btn sm" disabled={busy || !recipientHandle || !amount} onClick={doCreate}>{busy ? 'Sending…' : 'Send privately'}</button>
+      </div>
+    </div>
+  )
+}
+
+const psendToken = (p) => (p.token === 'native' ? 'ETH' : 'USDG')
+const psendDecimals = (p) => (p.token === 'native' ? 18 : 6)
+const fmtPsendAmount = (p) => Number(p.amount).toLocaleString('en-US', { maximumFractionDigits: 6 })
+
+function PrivateSendRow({ row, address, toast, onChanged }) {
+  const [busy, setBusy] = useState(false)
+  const isSender = address && row.senderWallet?.toLowerCase() === address.toLowerCase()
+  const isRecipient = address && row.recipientWallet?.toLowerCase() === address.toLowerCase()
+  const statusPill = row.status === 'claimed' ? 'ok' : row.status === 'failed' ? '' : 'warn'
+
+  const doClaim = async () => {
+    const authToken = getAuthToken()
+    if (!authToken) { toast('Sign in with X first'); return }
+    setBusy(true)
+    try {
+      await claimPrivateSend({ data: { token: authToken, id: row.id } })
+      toast('Claim created — sign it in the Pending tab')
+      onChanged()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="card pad-lg" style={{ marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div className="eyebrow">{isSender ? 'You sent this privately' : isRecipient ? 'Sent to you privately' : ''}</div>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 500 }}>{fmtPsendAmount(row)} {psendToken(row)}</h2>
+        </div>
+        <span className={'pill ' + statusPill}>{row.status.replace('_', ' ')}</span>
+      </div>
+      <div style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', margin: '0.5rem 0' }}>
+        {isSender && <>to {short(row.recipientWallet)} — their wallet only sees TagioPay's pool, not you</>}
+        {isRecipient && <>from TagioPay's pool — the sender's own wallet is never shown</>}
+        {row.claimedBy && <> · claimed by {row.claimedBy === 'keeper' ? "TagioPay's keeper" : 'you'}</>}
+      </div>
+      {isRecipient && row.status === 'sent' && (
+        <button className="btn sm" disabled={busy} onClick={doClaim}>{busy ? 'Signing…' : 'Claim now (skip the keeper)'}</button>
+      )}
+    </div>
+  )
+}
+
+function PrivateSend({ toast }) {
+  const { address } = useAccount()
+  const query = useQuery({ queryKey: ['private-sends', address], queryFn: () => getPrivateSends({ data: address }), enabled: !!address })
+  const rows = query.data || []
+
+  return (
+    <div className="fade-in">
+      <CreatePrivateSend toast={toast} onCreated={() => query.refetch()} />
+      {query.isLoading ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>Loading private sends…</p></div>
+      ) : rows.length === 0 ? (
+        <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No private sends yet — send one above, or use <code>$psend amount TOKEN to @handle</code> on X.</p></div>
+      ) : (
+        rows.map((row) => (
+          <PrivateSendRow key={row.id} row={row} address={address} toast={toast} onChanged={() => query.refetch()} />
+        ))
+      )}
+    </div>
+  )
+}
+
 // Requests created by the X bot (a mention/DM like "send 5 usdg to @friend")
 // land here as unsigned payloads -- the bot never signs anything itself. This
 // view is where the loop actually closes: list -> sign with the connected
 // wallet -> report the resulting tx_hash back so the backend can verify it
 // landed onchain before marking it done.
-function Pending({ toast }) {
-  const [rows, setRows] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [busyId, setBusyId] = useState(null)
-
-  const load = async () => {
-    const token = getAuthToken()
-    if (!token) { setRows([]); setLoading(false); return }
-    setLoading(true)
-    try {
-      setRows(await getPendingTransactions({ data: { token } }))
-    } catch {
-      setRows([])
-    } finally {
-      setLoading(false)
-    }
+// Shared by the Pending tab and the on-load PendingModal so the two never
+// drift apart on how a row's headline reads.
+function PendingRowLabel({ row }) {
+  if (row.kind === 'swap') {
+    return <b style={{ fontWeight: 500 }}>Swap {row.amount} {row.token} → {row.target_value}</b>
   }
-
-  useEffect(() => { load() }, [])
-
-  const sign = async (row) => {
-    const token = getAuthToken()
-    setBusyId(row.id)
-    try {
-      const hash = row.kind === 'swap'
-        ? await signAndConfirmSwapPlan({
-            approvals: row.approvals || [],
-            swap: { to: row.unsigned_to, data: row.unsigned_data, value: row.unsigned_value },
-          })
-        : await signPendingTransaction({
-            to: row.unsigned_to,
-            data: row.unsigned_data,
-            value: row.unsigned_value,
-          })
-      await broadcastPendingTransaction({ data: { token, id: row.id, txHash: hash } })
-      toast(`Sent · pending request #${row.id} settled onchain`)
-      load()
-    } catch (e) {
-      toast(friendlyError(e))
-    } finally {
-      setBusyId(null)
-    }
+  if (row.kind === 'deposit') {
+    return (
+      <b style={{ fontWeight: 500 }}>
+        {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → @{row.target_value} <span style={{ fontWeight: 400, color: 'var(--ink-faint)' }}>(escrowed until they link)</span>
+      </b>
+    )
   }
-
-  const dismiss = async (row) => {
-    const token = getAuthToken()
-    setBusyId(row.id)
-    try {
-      await cancelPendingTransaction({ data: { token, id: row.id } })
-      toast(`Dismissed pending request #${row.id}`)
-      load()
-    } catch (e) {
-      toast(friendlyError(e))
-    } finally {
-      setBusyId(null)
-    }
+  if (row.kind === 'claim') {
+    return <b style={{ fontWeight: 500 }}>Claim {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} from escrow</b>
   }
+  return (
+    <b style={{ fontWeight: 500 }}>
+      {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → {row.target_type === 'hashtag' ? '#' : row.target_type === 'x_account' ? '@' : ''}{row.target_value}
+    </b>
+  )
+}
 
+function Pending({ rows, loading, busyId, sign, dismiss }) {
   return (
     <div className="fade-in">
       <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
@@ -786,12 +1153,9 @@ function Pending({ toast }) {
             <div key={row.id} className="act-row" style={{ gridTemplateColumns: '2rem 1fr auto', alignItems: 'center' }}>
               <span className="act-ic in">{I.clock}</span>
               <div>
-                {row.kind === 'swap' ? (
-                  <b style={{ fontWeight: 500 }}>Swap {row.amount} {row.token} → {row.target_value}</b>
-                ) : (
-                  <b style={{ fontWeight: 500 }}>
-                    {row.amount} {row.token === 'native' ? 'ETH' : 'USDG'} → {row.target_type === 'hashtag' ? '#' : row.target_type === 'x_account' ? '@' : ''}{row.target_value}
-                  </b>
+                <PendingRowLabel row={row} />
+                {row.source && row.source !== 'x_bot' && (
+                  <span className="pill ok" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>🎉 unlocked from a past {row.source}</span>
                 )}
                 <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>
                   {row.kind === 'swap' && row.quote_route && <>{row.quote_route} · </>}
@@ -814,12 +1178,59 @@ function Pending({ toast }) {
   )
 }
 
+// On-load nudge: if there's anything waiting on your signature, surface the
+// 5 most recent right away instead of making you discover the Pending tab
+// on your own. Dismissing the modal just hides it for this visit -- it
+// doesn't decline anything; the full list is always still in the Pending
+// tab.
+function PendingModal({ rows, busyId, sign, dismiss, onViewAll, onClose }) {
+  const shown = rows.slice(0, 5)
+  const remaining = rows.length - shown.length
+
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="card pad-lg fade-in" style={{ maxWidth: '32rem', width: '90%', maxHeight: '80vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+          <div className="eyebrow">Waiting on your signature</div>
+          <button className="btn ghost sm" onClick={onClose}>{I.x}</button>
+        </div>
+        <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1rem' }}>
+          {rows.length} request{rows.length === 1 ? '' : 's'} from the X bot {rows.length === 1 ? 'is' : 'are'} ready to review.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          {shown.map((row) => (
+            <div key={row.id} className="act-row" style={{ gridTemplateColumns: '2rem 1fr auto', alignItems: 'center' }}>
+              <span className="act-ic in">{I.clock}</span>
+              <div>
+                <PendingRowLabel row={row} />
+                <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>{fmtWhen(row.created_at)}</div>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button className="btn ghost sm" disabled={busyId === row.id} onClick={() => dismiss(row)}>Decline</button>
+                <button className="btn sm" disabled={busyId === row.id} onClick={() => sign(row)}>{busyId === row.id ? 'Signing…' : 'Accept'}</button>
+              </div>
+            </div>
+          ))}
+        </div>
+        {remaining > 0 && (
+          <button className="btn ghost sm" onClick={onViewAll} style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}>
+            + {remaining} more · view full list in Pending
+          </button>
+        )}
+      </div>
+    </div>
+  )
+}
+
 const ROUTES = [
   { id: 'overview', label: 'Overview', icon: I.grid },
   { id: 'handles', label: 'Handles', icon: I.hash },
   { id: 'resolver', label: 'Resolver', icon: I.split },
   { id: 'send', label: 'Send', icon: I.send },
   { id: 'trade', label: 'Trade', icon: I.trade },
+  { id: 'causes', label: 'Causes', icon: I.heart },
+  { id: 'escrow', label: 'Escrow', icon: I.shield },
+  { id: 'psend', label: 'Private Send', icon: I.lock },
   { id: 'pending', label: 'Pending', icon: I.clock },
   { id: 'activity', label: 'Activity', icon: I.act },
 ]
@@ -896,6 +1307,52 @@ export default function Dashboard() {
 
   const go = (r) => { setView(r); setDrawer(false) }
   const toast = (msg) => { const id = Date.now() + Math.random(); setToasts((t) => [...t, { id, msg }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200) }
+
+  // Shared by the Pending tab and the on-load modal -- one fetch, one
+  // sign/dismiss implementation, so they can never show conflicting state.
+  const pendingQuery = useQuery({
+    queryKey: ['pending-transactions', address],
+    enabled: Boolean(address) && authStatus === 'signed_in',
+    queryFn: () => getPendingTransactions({ data: { token: getAuthToken() } }),
+  })
+  const pendingRows = pendingQuery.data || []
+  const [pendingBusyId, setPendingBusyId] = useState(null)
+  const [pendingModalDismissed, setPendingModalDismissed] = useState(false)
+  const refreshPending = () => queryClient.invalidateQueries({ queryKey: ['pending-transactions'] })
+
+  const signPending = async (row) => {
+    const token = getAuthToken()
+    setPendingBusyId(row.id)
+    try {
+      const primary = { to: row.unsigned_to, data: row.unsigned_data, value: row.unsigned_value }
+      const hash = row.kind === 'swap'
+        ? await signAndConfirmSwapPlan({ approvals: row.approvals || [], swap: primary })
+        : row.kind === 'disperse'
+          ? await signAndConfirmSteps([...(row.approvals || []), primary, ...(row.extra_steps || [])])
+          : await signPendingTransaction(primary)
+      await broadcastPendingTransaction({ data: { token, id: row.id, txHash: hash } })
+      toast(`Sent · pending request #${row.id} settled onchain`)
+      refreshPending()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setPendingBusyId(null)
+    }
+  }
+
+  const dismissPending = async (row) => {
+    const token = getAuthToken()
+    setPendingBusyId(row.id)
+    try {
+      await cancelPendingTransaction({ data: { token, id: row.id } })
+      toast(`Dismissed pending request #${row.id}`)
+      refreshPending()
+    } catch (e) {
+      toast(friendlyError(e))
+    } finally {
+      setPendingBusyId(null)
+    }
+  }
   const refresh = (name) => {
     const acct = getAccount(wagmiConfig).address
     if (name && acct) addTracked(acct, name)
@@ -923,6 +1380,9 @@ export default function Dashboard() {
     resolver: ['Resolver', handle ? `Routing & identity for #${handle.name}` : 'Routing & identity'],
     send: ['Send', 'Pay anyone by their handle'],
     trade: ['Trade', 'Swap ETH/USDG for tokenized RWA stocks'],
+    causes: ['Causes', 'Public, transparent donations with on-chain receipts'],
+    escrow: ['Escrow', 'Create -> Accept -> Deliver -> Release, for freelance and any bilateral deal'],
+    psend: ['Private Send', "Shields your identity from the recipient -- their wallet only ever sees TagioPay's pool, never yours"],
     pending: ['Pending', 'Requests from the X bot, waiting on your signature'],
     activity: ['Activity', 'Indexed onchain payments per hashtag'],
   }
@@ -950,7 +1410,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="content">
-            {!address && view !== 'send' && view !== 'trade' && view !== 'activity' ? (
+            {!address && view !== 'send' && view !== 'trade' && view !== 'activity' && view !== 'causes' ? (
               <ConnectPrompt />
             ) : (
               <>
@@ -961,7 +1421,10 @@ export default function Dashboard() {
                   : <div className="card pad-lg fade-in"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>{handlesQuery.isLoading ? 'Loading your handles…' : 'No handles to configure yet — claim one first.'}</p></div>)}
                 {view === 'send' && <Send toast={toast} />}
                 {view === 'trade' && <Trade toast={toast} />}
-                {view === 'pending' && <Pending toast={toast} />}
+                {view === 'pending' && <Pending rows={pendingRows} loading={pendingQuery.isLoading} busyId={pendingBusyId} sign={signPending} dismiss={dismissPending} />}
+                {view === 'causes' && <Causes toast={toast} />}
+                {view === 'escrow' && <Escrow toast={toast} />}
+                {view === 'psend' && <PrivateSend toast={toast} />}
                 {view === 'activity' && <Activity />}
               </>
             )}
@@ -971,6 +1434,16 @@ export default function Dashboard() {
       </div>
       {address && authStatus !== 'signed_in' && (
         <AuthGate status={authStatus} error={authError} onRetry={() => setAuthAttempt((n) => n + 1)} />
+      )}
+      {authStatus === 'signed_in' && !pendingModalDismissed && view !== 'pending' && pendingRows.length > 0 && (
+        <PendingModal
+          rows={pendingRows}
+          busyId={pendingBusyId}
+          sign={signPending}
+          dismiss={dismissPending}
+          onViewAll={() => { setPendingModalDismissed(true); go('pending') }}
+          onClose={() => setPendingModalDismissed(true)}
+        />
       )}
     </div>
   )
