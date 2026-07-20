@@ -101,7 +101,14 @@ export const config = {
     pollIntervalMs: parseInt(process.env.KEEPER_POLL_INTERVAL_MS ?? "60000", 10),
     // Below this, the keeper skips claiming (would spend more than it has)
     // and logs a low-balance warning instead of trying and failing.
-    minBalanceWei: process.env.KEEPER_MIN_BALANCE_WEI ?? "2000000000000000", // 0.002 ETH
+    // Recalibrated 2026-07-20 after the first live claim: a real claim()
+    // costs ~76,000 gas (~0.0000044-0.0000076 ETH at this chain's observed
+    // gas prices), so the original 0.002 ETH floor was a pre-launch guess
+    // roughly 300x more conservative than actually necessary -- it would
+    // have kept the keeper permanently idle even when genuinely funded
+    // enough for hundreds of claims. 0.0001 ETH still leaves a real margin
+    // (~15-20 claims worth) without blocking on funds that are already fine.
+    minBalanceWei: process.env.KEEPER_MIN_BALANCE_WEI ?? "100000000000000", // 0.0001 ETH
   },
 
   x: {
