@@ -8,7 +8,13 @@ import { createPendingTransaction, createPendingSwap, createPendingDeposit } fro
 import { resolveToken } from "../../lib/rwaTokens";
 import { planSwap } from "../../lib/swapExecution";
 import { parseIntent } from "./intentParser";
-import { getOpenClarification, saveClarification, clearClarification, CLARIFICATION_REPLIES } from "./clarificationService";
+import {
+  getOpenClarification,
+  saveClarification,
+  clearClarification,
+  buildClarificationReply,
+  COULD_NOT_PROCESS_REPLY,
+} from "./clarificationService";
 import { handleGiveawayIntent } from "./giveawayHandler";
 import { handleHoldAirdrop, handleBullpostAirdrop } from "./airdropHandler";
 import { handleCauseCommand, handleDonateToName } from "./causeHandler";
@@ -315,33 +321,46 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
     const intent = await parseIntent(
       msg.text,
       openClarification
-        ? { partialIntent: openClarification.partialIntent, missingSlot: openClarification.missingSlot }
+        ? { partialIntent: openClarification.partialIntent, missingSlots: openClarification.missingSlots }
         : undefined,
     );
 
-    if (intent.action === "unrecognized") {
-      log.info("x_bot_message_ignored", {
-        ...ctx,
-        reason: "unparseable",
-        textSnippet: msg.source === "mention" ? msg.text.slice(0, 80) : undefined,
-      });
-      return; // not a recognized command -- silently ignore, no reply
+    // A user gets at most ONE follow-up per request (confirmed 2026-07-20).
+    // If there's already an open clarification, this message IS that one
+    // follow-up reply -- resolve it one way or the other and clear it,
+    // never ask again regardless of what Groq comes back with.
+    if (openClarification) {
+      await clearClarification(msg.authorId);
+      if (intent.action === "unrecognized" || intent.missingSlots.length > 0) {
+        await msg.reply(COULD_NOT_PROCESS_REPLY);
+        log.info("x_bot_could_not_process", { ...ctx, afterFollowUp: true });
+        return;
+      }
+      // else: fully resolved -- fall through to execute below.
+    } else {
+      // A fresh message, no prior clarification thread.
+      if (intent.action === "unrecognized") {
+        log.info("x_bot_message_ignored", {
+          ...ctx,
+          reason: "unparseable",
+          textSnippet: msg.source === "mention" ? msg.text.slice(0, 80) : undefined,
+        });
+        return; // not clearly an attempt at any command -- silently ignore, no reply
+      }
+      if (intent.missingSlots.length > 0) {
+        await saveClarification({
+          xUserId: msg.authorId,
+          source: msg.source,
+          sourceRef: msg.id,
+          partialIntent: { ...intent },
+          missingSlots: intent.missingSlots,
+        });
+        await msg.reply(buildClarificationReply(intent.missingSlots));
+        log.info("x_bot_clarification_asked", { ...ctx, missingSlots: intent.missingSlots });
+        return;
+      }
+      // else: fully resolved on the first try -- fall through to execute below.
     }
-
-    if (intent.clarificationNeeded) {
-      await saveClarification({
-        xUserId: msg.authorId,
-        source: msg.source,
-        sourceRef: msg.id,
-        partialIntent: { ...intent },
-        missingSlot: intent.clarificationNeeded,
-      });
-      await msg.reply(CLARIFICATION_REPLIES[intent.clarificationNeeded]);
-      log.info("x_bot_clarification_asked", { ...ctx, missingSlot: intent.clarificationNeeded });
-      return;
-    }
-
-    if (openClarification) await clearClarification(msg.authorId);
 
     if (intent.action === "giveaway") {
       await handleGiveawayIntent(

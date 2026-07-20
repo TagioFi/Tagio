@@ -31,15 +31,18 @@ export interface ParsedIntent {
   keyword: string | null; // bullpost-airdrop's search keyword
   recipientCount: number | null; // bullpost-airdrop's headcount
   confidence: number;
-  clarificationNeeded: MissingSlot | null;
+  // Every slot still missing, not just one -- a user gets at most one
+  // follow-up per request (confirmed 2026-07-20), so the first pass has to
+  // surface everything it needs at once instead of one thing per round-trip.
+  missingSlots: MissingSlot[];
 }
 
 /** Whatever slots a prior turn already gathered, for merging a short
- * follow-up reply ("20 people", "eth") into a complete intent instead of
- * parsing it as a brand new, context-free instruction. */
+ * follow-up reply ("20 people, eth", "likes, 5") into a complete intent
+ * instead of parsing it as a brand new, context-free instruction. */
 export interface PriorIntentContext {
   partialIntent: Record<string, unknown>;
-  missingSlot: MissingSlot;
+  missingSlots: MissingSlot[];
 }
 
 const SYSTEM_INSTRUCTION = `You parse free-text giveaway and airdrop requests for TagioPay, a bot on Robinhood Chain (tokenized equities + ETH + USDG).
@@ -55,14 +58,14 @@ Classify into exactly one of: "giveaway", "airdrop", "unrecognized".
 "unrecognized" is anything that isn't clearly a giveaway or airdrop request -- an ordinary reply, a question, spam, or anything else. Use this whenever you're not confident it's actually one of the two.
 
 Respond with ONLY a JSON object matching exactly this shape (no markdown, no extra keys):
-{"action": "giveaway"|"airdrop"|"unrecognized", "amount": number|null, "token": "eth"|"usdg"|null, "winnerCount": number|null, "requirementType": "likes"|"comments"|"retweets"|null, "requirementThreshold": number|null, "airdropMode": "hold"|"bullpost"|null, "tokenAddress": string|null, "keyword": string|null, "recipientCount": number|null, "confidence": number, "clarificationNeeded": "missing_amount"|"missing_token"|"missing_recipient_count"|"ambiguous_target"|"missing_requirement_threshold"|null}
+{"action": "giveaway"|"airdrop"|"unrecognized", "amount": number|null, "token": "eth"|"usdg"|null, "winnerCount": number|null, "requirementType": "likes"|"comments"|"retweets"|null, "requirementThreshold": number|null, "airdropMode": "hold"|"bullpost"|null, "tokenAddress": string|null, "keyword": string|null, "recipientCount": number|null, "confidence": number, "missingSlots": ("missing_amount"|"missing_token"|"missing_recipient_count"|"ambiguous_target"|"missing_requirement_threshold")[]}
 
 - Only fill slots relevant to the classified action; leave every other slot null.
 - "confidence" is your confidence in the classification, 0 to 1.
-- "clarificationNeeded" is set when a slot required to actually execute the request is missing: missing_amount (no amount/token given), missing_token (amount given but not which token), missing_recipient_count (bullpost-airdrop with no headcount), ambiguous_target (unclear who should receive it), missing_requirement_threshold (giveaway with no clear engagement type). Null when nothing required is missing.
-- Never invent an amount, token, count, address, or keyword that wasn't stated or clearly implied. When in doubt, lower confidence and set clarificationNeeded instead of guessing.
+- "missingSlots" lists EVERY slot required to actually execute the request that's still missing -- not just the first one you notice. Include as many as apply: missing_amount (no amount/token given), missing_token (amount given but not which token), missing_recipient_count (bullpost-airdrop with no headcount), ambiguous_target (unclear who should receive it), missing_requirement_threshold (giveaway with no clear engagement type). Empty array when nothing required is missing.
+- Never invent an amount, token, count, address, or keyword that wasn't stated or clearly implied. When in doubt, lower confidence and list the relevant slot in missingSlots instead of guessing.
 
-Sometimes the message includes a "PRIOR TURN" block -- the slots already gathered earlier in this same conversation, plus which slot was asked for. The new message is almost always a short, incomplete answer to that question ("eth", "20 people", "likes"), not a fresh standalone instruction. Merge it into the prior turn: keep the prior action and every prior field the new message doesn't touch, fill in whatever the new message answers, and only discard the prior context if the new message is unambiguously a different, self-contained instruction. If the merged result is still missing a required slot, set clarificationNeeded to the next thing that's missing.`;
+Sometimes the message includes a "PRIOR TURN" block -- the slots already gathered earlier in this same conversation, plus which slots were asked for (this is the user's ONE AND ONLY follow-up reply -- there will be no second chance, so extract everything this reply answers as generously as reasonable). The new message is almost always a short, incomplete answer to that question ("eth, 20 people", "likes, 5", "20"), not a fresh standalone instruction. Merge it into the prior turn: keep the prior action and every prior field the new message doesn't touch, fill in whatever the new message answers, and only discard the prior context if the new message is unambiguously a different, self-contained instruction. Set missingSlots to whatever, if anything, is still missing after merging -- this will NOT be asked again, so only list something here if it truly can't be inferred.`;
 
 // Free-tier rate limit (not a shrinking credit balance): 30 req/min --
 // queue FIFO and wait for a slot in a rolling 60s window rather than
@@ -110,7 +113,7 @@ function scheduleGroqCall<T>(fn: () => Promise<T>): Promise<T> {
 
 function buildUserContent(message: string, prior?: PriorIntentContext): string {
   if (!prior) return message;
-  return `PRIOR TURN (already gathered this conversation): ${JSON.stringify(prior.partialIntent)}\nYou asked: "${prior.missingSlot}"\nUser's reply: ${message}`;
+  return `PRIOR TURN (already gathered this conversation): ${JSON.stringify(prior.partialIntent)}\nYou asked about: ${JSON.stringify(prior.missingSlots)}\nUser's reply (their one and only follow-up -- there is no second chance after this): ${message}`;
 }
 
 export async function parseIntent(message: string, prior?: PriorIntentContext): Promise<ParsedIntent> {
@@ -146,22 +149,25 @@ export async function parseIntent(message: string, prior?: PriorIntentContext): 
     // The JSON-object response mode only guarantees valid JSON syntax, not
     // adherence to the enum described in the prompt -- confirmed live: Groq
     // once returned "missing_winner_count" here, a value that doesn't exist
-    // in the reply bank (clarificationService.ts's CLARIFICATION_REPLIES),
-    // which would have looked up as undefined with no defensive check.
-    clarificationNeeded: oneOf(
-      parsed.clarificationNeeded,
-      [
-        "missing_amount",
-        "missing_token",
-        "missing_recipient_count",
-        "ambiguous_target",
-        "missing_requirement_threshold",
-      ] as const,
-      null,
-    ),
+    // in the reply bank (clarificationService.ts's CLARIFICATION_QUESTIONS),
+    // which would have looked up as undefined with no defensive check. Same
+    // defensive filtering now applied per-element of the array: any
+    // hallucinated value outside the known enum is dropped, not kept.
+    missingSlots: oneOfArray(parsed.missingSlots, [
+      "missing_amount",
+      "missing_token",
+      "missing_recipient_count",
+      "ambiguous_target",
+      "missing_requirement_threshold",
+    ] as const),
   };
 }
 
 function oneOf<T extends string>(value: unknown, allowed: readonly T[], fallback: T | null): T | null {
   return typeof value === "string" && (allowed as readonly string[]).includes(value) ? (value as T) : fallback;
+}
+
+function oneOfArray<T extends string>(value: unknown, allowed: readonly T[]): T[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is T => typeof v === "string" && (allowed as readonly string[]).includes(v));
 }

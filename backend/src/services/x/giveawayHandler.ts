@@ -97,8 +97,8 @@ export async function handleGiveawayIntent(
   }
   if (!intent.amount || !intent.token || !intent.winnerCount || !intent.requirementType) {
     // Slots incomplete -- Wave 2's follow-up asker handles this from the
-    // caller (poller.ts checks intent.clarificationNeeded before calling
-    // this function at all); reaching here with something missing means an
+    // caller (poller.ts checks intent.missingSlots before calling this
+    // function at all); reaching here with something missing means an
     // inconsistent intent slipped through, so decline rather than guess.
     return;
   }

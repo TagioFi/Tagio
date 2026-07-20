@@ -64,29 +64,51 @@ Ships before giveaway and airdrop since both lean on it (bullpost-airdrop's
 missing headcount is the motivating case, but this is built generic —
 any future command with an ambiguous or missing parameter reuses it).
 
+Revised 2026-07-20: a user is entitled to **at most one follow-up per
+request**, not a chain of one-slot-at-a-time questions — both to save on
+Groq calls per completed request and so a conversation never drags on
+indefinitely. Every message chain now ends in at most 3 steps: their post →
+the one follow-up → either a transaction created or a fixed "couldn't
+process this, here's what I understand" reply — or just post → transaction
+created directly, when nothing was missing on the first pass.
+
 - **Clarification state**
-  - Backend: New `pending_clarifications` table — `x_user_id`, `source`
+  - Backend: `pending_clarifications` table — `x_user_id`, `source`
     (mention/dm), `source_ref`, `partial_intent` (jsonb — whatever Groq
-    extracted so far), `missing_slot` (enum, see fixed reply bank below),
-    `created_at`, `expires_at` (`created_at + 30 minutes`, confirmed).
+    extracted so far), `missing_slots` (JSONB array of slot enums, see fixed
+    reply bank below — an array, not a single slot, so one follow-up can ask
+    about everything missing at once), `created_at`, `expires_at`
+    (`created_at + 30 minutes`, confirmed).
   - Backend: Before parsing a new incoming mention/DM as a fresh command, check
-    for an open (non-expired) clarification from that `x_user_id` first — if one
-    exists, pass the new message + the stored `partial_intent` to Groq as an
-    answer-to-a-specific-slot, not a new command. Merge the result; if still
-    incomplete, ask the next missing thing (extends `expires_at`); if complete,
-    proceed into the normal resolve → build → pending-tx flow and delete the
-    clarification row.
+    for an open (non-expired) clarification from that `x_user_id` first.
+    - **No open clarification** (fresh message): if Groq can't classify it at
+      all, silently ignore (not every mention is a command attempt). If it's
+      clearly a giveaway/airdrop attempt but missing required slots, save a
+      clarification with every missing slot and send ONE combined reply
+      asking for all of them together, then stop -- no further asking after
+      this for this request.
+    - **Open clarification exists** (this message IS the one follow-up
+      reply): pass it + the stored `partial_intent` to Groq to merge into a
+      complete intent. Whatever comes back, the clarification is cleared
+      immediately -- if it's now complete, proceed into the normal resolve →
+      build → pending-tx flow; if anything is still missing or unrecognized,
+      reply with the fixed `COULD_NOT_PROCESS_REPLY` (lists every available
+      command) instead of asking again.
   - Backend: Expired clarifications are dropped silently on the next sweep — no
     reply sent (avoids spending a reply-write on a conversation the user already
     walked away from).
 
-- **Fixed reply bank (one templated string per confusable slot — Groq only ever
-  fills a slot enum, never generates the reply text itself)**
-  - `missing_amount` → "How much should this send/give away in total?"
-  - `missing_token` → "Which token — ETH or USDG?"
-  - `missing_recipient_count` → "How many people should this go to?"
-  - `ambiguous_target` → "Who should receive this — a hashtag, wallet, X account, or token holders?"
-  - `missing_requirement_threshold` → "What's the minimum — likes, comments, or retweets — for this giveaway?"
+- **Fixed reply bank (templated strings per confusable slot — Groq only ever
+  fills slot enums, never generates the reply text itself)**
+  - Single missing slot → its full natural-language question, e.g.
+    `missing_recipient_count` → "How many people should this go to?"
+  - Multiple missing slots → one combined reply joining a short fragment per
+    slot, e.g. "A few things I need: how much (and which token) to give away
+    in total; how many people this should go to. Reply with all of it in one
+    message."
+  - Still-incomplete-after-the-one-follow-up → `COULD_NOT_PROCESS_REPLY`, a
+    fixed message listing every available command (send/swap/giveaway/
+    airdrop/cause/escrow/psend/claim).
   - Frontend: none — this is entirely a DM/mention-reply flow, no dashboard surface.
 
 ---
