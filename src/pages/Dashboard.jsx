@@ -1440,14 +1440,23 @@ export default function Dashboard() {
 
   // Shared by the Pending tab and the on-load modal -- one fetch, one
   // sign/dismiss implementation, so they can never show conflicting state.
+  // Polls on its own so a request created by the bot/DApp while the
+  // dashboard's already open shows up (badge + modal) without a refresh.
   const pendingQuery = useQuery({
     queryKey: ['pending-transactions', address],
     enabled: Boolean(address) && authStatus === 'signed_in',
     queryFn: () => getPendingTransactions({ data: { token: getAuthToken() } }),
+    refetchInterval: 20000,
   })
   const pendingRows = pendingQuery.data || []
   const [pendingBusyId, setPendingBusyId] = useState(null)
-  const [pendingModalDismissed, setPendingModalDismissed] = useState(false)
+  // Dismissing the modal only needs to hide it for the requests it was
+  // actually shown for -- tracked by id, not a single blanket flag, so a
+  // *new* request arriving later (via the poll above) still pops the modal
+  // even if an earlier batch was already dismissed this session.
+  const [dismissedPendingIds, setDismissedPendingIds] = useState(() => new Set())
+  const hasUndismissedPending = pendingRows.some((r) => !dismissedPendingIds.has(r.id))
+  const dismissPendingModal = () => setDismissedPendingIds((prev) => new Set([...prev, ...pendingRows.map((r) => r.id)]))
   const refreshPending = () => queryClient.invalidateQueries({ queryKey: ['pending-transactions'] })
 
   const signPending = async (row) => {
@@ -1573,14 +1582,14 @@ export default function Dashboard() {
       {address && authStatus !== 'signed_in' && (
         <AuthGate status={authStatus} error={authError} onRetry={() => setAuthAttempt((n) => n + 1)} />
       )}
-      {authStatus === 'signed_in' && !pendingModalDismissed && view !== 'pending' && pendingRows.length > 0 && (
+      {authStatus === 'signed_in' && hasUndismissedPending && view !== 'pending' && (
         <PendingModal
           rows={pendingRows}
           busyId={pendingBusyId}
           sign={signPending}
           dismiss={dismissPending}
-          onViewAll={() => { setPendingModalDismissed(true); go('pending') }}
-          onClose={() => setPendingModalDismissed(true)}
+          onViewAll={() => { dismissPendingModal(); go('pending') }}
+          onClose={dismissPendingModal}
         />
       )}
     </div>
