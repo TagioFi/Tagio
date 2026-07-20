@@ -316,6 +316,21 @@ export const getWalletBalances = createServerFn({ method: "GET" })
     return (await res.json()) as WalletBalance[];
   });
 
+// "Who is this wallet" lookup -- whatever it's publicly known as: a linked
+// X handle, and its top hashtags by volume. Used for the private-send
+// recipient/sender identity modal.
+export interface WalletIdentity {
+  xHandle: string | null;
+  hashtags: { hashtag: string; name: string | null; total_volume_usd: number }[];
+}
+
+export const getWalletIdentity = createServerFn({ method: "GET" })
+  .validator((address: string) => address)
+  .handler(async ({ data: address }): Promise<WalletIdentity> => {
+    const res = await apiFetch(`/wallet/${address}/identity`);
+    return (await res.json()) as WalletIdentity;
+  });
+
 /* ---------- causes (Wave 5: donations/crowdfunding) ---------- */
 
 export interface Cause {
@@ -401,14 +416,16 @@ export const getPrivateSends = createServerFn({ method: "GET" })
 // Dashboard-native equivalent of the $psend bot command -- creates the
 // pending_transactions row the sender then signs via the normal Pending
 // tab flow. Requires auth since the backend resolves the recipient from the
-// caller's own linked X account context.
+// caller's own linked X account context. `recipient` accepts @handle,
+// #hashtag, or a raw 0x wallet address -- same three kinds a plain send
+// accepts, disambiguated server-side by prefix.
 export const createPrivateSend = createServerFn({ method: "POST" })
-  .validator((input: { token: string; recipientHandle: string; amount: string; sendToken: "native" | "usdg" }) => input)
+  .validator((input: { token: string; recipient: string; amount: string; sendToken: "native" | "usdg" }) => input)
   .handler(async ({ data }): Promise<{ created: boolean; id: number }> => {
     const res = await apiFetch("/private-sends", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${data.token}` },
-      body: JSON.stringify({ recipientHandle: data.recipientHandle, amount: data.amount, token: data.sendToken }),
+      body: JSON.stringify({ recipient: data.recipient, amount: data.amount, token: data.sendToken }),
     });
     return (await res.json()) as { created: boolean; id: number };
   });

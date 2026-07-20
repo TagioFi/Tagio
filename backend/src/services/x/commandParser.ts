@@ -205,22 +205,35 @@ export function parseEscrowCommand(rawText: string): ParsedEscrowCommand | null 
   return null;
 }
 
-// Wave 7: private send. "$"-prefixed, same family as cause/escrow. Recipient
-// must already be a linked wallet (see privateSendHandler.ts) -- the
-// commitment needs a concrete recipient address at send time, so there's no
-// unlinked-handle path the way plain sends have ClaimEscrow.
+// Wave 7: private send. "$"-prefixed, same family as cause/escrow. Same
+// three target kinds as the plain send command (@handle, #hashtag,
+// 0xaddress) -- a hashtag or raw wallet address resolves straight to a
+// concrete address with no X account needed at all, so only the @handle
+// path requires the recipient to already be a linked wallet (see
+// privateSendHandler.ts).
 export interface ParsedPrivateSendCommand {
   amount: string;
   token: BotToken;
-  recipientHandle: string;
+  targetType: BotTargetType;
+  targetValue: string;
 }
 
-const PRIVATE_SEND_PATTERN = /\$psend\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+@([a-zA-Z0-9_]{1,15})/i;
+const PRIVATE_SEND_PATTERN =
+  /\$psend\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
 
 export function parsePrivateSendCommand(rawText: string): ParsedPrivateSendCommand | null {
   const m = rawText.match(PRIVATE_SEND_PATTERN);
   if (!m) return null;
-  return { amount: m[1]!, token: normalizeToken(m[2]!), recipientHandle: m[3]! };
+  const [, amount, tokenRaw, targetRaw] = m;
+  const token = normalizeToken(tokenRaw!);
+
+  if (targetRaw!.startsWith("@")) {
+    return { amount: amount!, token, targetType: "x_account", targetValue: targetRaw!.slice(1) };
+  }
+  if (targetRaw!.startsWith("#")) {
+    return { amount: amount!, token, targetType: "hashtag", targetValue: targetRaw!.slice(1).toLowerCase() };
+  }
+  return { amount: amount!, token, targetType: "wallet", targetValue: targetRaw! };
 }
 
 // Manual fallback for the recipient side -- no arguments, just resolves

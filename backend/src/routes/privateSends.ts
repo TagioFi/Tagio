@@ -11,7 +11,19 @@ import {
 } from "../services/x/privateSendService";
 import { createPendingPrivateSend, createPendingPrivateSendClaim } from "../services/x/pendingTransactionService";
 import { getLinkedXAccountByWallet, getLinkedXAccountByHandle } from "../services/x/xAccountService";
-import type { BotToken } from "../services/x/commandParser";
+import { resolveTargetWallet } from "../services/x/targetResolver";
+import type { BotToken, BotTargetType } from "../services/x/commandParser";
+
+// Same three target kinds the bot's $psend command accepts: @handle,
+// #hashtag, or a raw 0xaddress -- a hashtag or wallet resolves to a
+// concrete recipient with no X account needed at all.
+function parseRecipientTarget(raw: string): { targetType: BotTargetType; targetValue: string } | null {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("@")) return { targetType: "x_account", targetValue: trimmed.slice(1) };
+  if (trimmed.startsWith("#")) return { targetType: "hashtag", targetValue: trimmed.slice(1).toLowerCase() };
+  if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) return { targetType: "wallet", targetValue: trimmed };
+  return null;
+}
 
 const router = Router();
 
@@ -50,21 +62,27 @@ router.get("/private-sends", async (req, res, next) => {
   }
 });
 
-// Dashboard-native equivalent of the $psend bot command -- resolves the
-// recipient straight from our own x_accounts table (no X API call needed,
-// unlike the bot's handler which only starts with raw @handle text). Same
-// policy as the bot: the recipient must already be a linked wallet. Creates
-// the pending_transactions row the sender then signs via the normal Pending
-// tab flow -- this endpoint never signs or broadcasts anything itself.
+// Dashboard-native equivalent of the $psend bot command -- same three
+// target kinds (@handle, #hashtag, 0xaddress). A hashtag or raw wallet
+// address resolves straight to a concrete recipient with no X account
+// needed at all; only the @handle path requires the recipient to already
+// be a linked wallet. Creates the pending_transactions row the sender then
+// signs via the normal Pending tab flow -- this endpoint never signs or
+// broadcasts anything itself.
 router.post("/private-sends", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
-    const { recipientHandle, amount, token } = req.body as {
-      recipientHandle?: string;
+    const { recipient: recipientRaw, amount, token } = req.body as {
+      recipient?: string;
       amount?: string;
       token?: BotToken;
     };
-    if (!recipientHandle || !amount || (token !== "native" && token !== "usdg")) {
-      res.status(400).json({ error: "recipientHandle, amount, and token ('native'|'usdg') are required" });
+    if (!recipientRaw || !amount || (token !== "native" && token !== "usdg")) {
+      res.status(400).json({ error: "recipient, amount, and token ('native'|'usdg') are required" });
+      return;
+    }
+    const target = parseRecipientTarget(recipientRaw);
+    if (!target) {
+      res.status(400).json({ error: "recipient must be an @handle, #hashtag, or 0x wallet address" });
       return;
     }
 
@@ -73,23 +91,35 @@ router.post("/private-sends", requireAuth, async (req: AuthedRequest, res, next)
       res.status(409).json({ error: "your wallet isn't linked to an X account" });
       return;
     }
-    const recipient = await getLinkedXAccountByHandle(recipientHandle);
-    if (!recipient) {
-      res.status(404).json({ error: "couldn't find a linked TagioPay wallet for that handle" });
-      return;
+
+    let recipientWallet: string | null;
+    let recipientXUserId: string | null = null;
+    if (target.targetType === "x_account") {
+      const recipient = await getLinkedXAccountByHandle(target.targetValue);
+      if (!recipient) {
+        res.status(404).json({ error: "couldn't find a linked TagioPay wallet for that handle" });
+        return;
+      }
+      recipientWallet = recipient.walletAddress;
+      recipientXUserId = recipient.xUserId;
+    } else {
+      recipientWallet = await resolveTargetWallet(target);
+      if (!recipientWallet) {
+        res.status(404).json({ error: `couldn't resolve that ${target.targetType === "hashtag" ? "hashtag" : "wallet"}` });
+        return;
+      }
     }
 
     const senderWallet = req.walletAddress as `0x${string}`;
-    const recipientWallet = recipient.walletAddress as `0x${string}`;
-    const prepared = await preparePrivateSend(senderWallet, recipientWallet, amount, token);
+    const prepared = await preparePrivateSend(senderWallet, recipientWallet as `0x${string}`, amount, token);
 
     const row = await createPrivateSendRow({
       commitment: prepared.commitment,
       secret: prepared.secret,
       senderWallet,
       senderXUserId: sender.xUserId,
-      recipientWallet,
-      recipientXUserId: recipient.xUserId,
+      recipientWallet: recipientWallet as `0x${string}`,
+      recipientXUserId,
       token,
       amount,
       amountBaseUnits: prepared.amountBaseUnits,
@@ -148,6 +178,12 @@ router.post("/private-sends/:id/claim", requireAuth, async (req: AuthedRequest, 
       return;
     }
 
+    // row.recipient_x_user_id may be null (a #hashtag/wallet-targeted send
+    // has no X account at all) -- but every dashboard user reaching this
+    // authed endpoint has one regardless, since linking X is mandatory at
+    // sign-in, so the caller's own account is the right one to use here,
+    // not the send's (possibly absent) recorded recipient X id.
+    const requester = await getLinkedXAccountByWallet(req.walletAddress!);
     const claim = buildUnsignedClaim(
       row.commitment as `0x${string}`,
       req.walletAddress as `0x${string}`,
@@ -155,7 +191,7 @@ router.post("/private-sends/:id/claim", requireAuth, async (req: AuthedRequest, 
     );
     const created = await createPendingPrivateSendClaim({
       requestedByWallet: req.walletAddress!,
-      requestedByXUserId: row.recipient_x_user_id,
+      requestedByXUserId: requester!.xUserId,
       sourceRef: `dapp-psend-claim-${row.id}`,
       commitment: row.commitment,
       token: row.token,

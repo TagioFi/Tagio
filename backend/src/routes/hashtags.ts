@@ -36,7 +36,7 @@ router.get("/hashtags", async (req, res, next) => {
     }
 
     const { rows } = await pool.query(
-      "SELECT * FROM hashtags WHERE owner_wallet = $1 AND active = true ORDER BY registered_at DESC",
+      "SELECT * FROM hashtags WHERE LOWER(owner_wallet) = LOWER($1) AND active = true ORDER BY registered_at DESC",
       [owner],
     );
     res.json(rows);

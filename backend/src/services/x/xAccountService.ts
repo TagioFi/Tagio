@@ -6,9 +6,15 @@ export interface XAccount {
   xHandle: string;
 }
 
+// Case-insensitive: callers pass whatever case their source has the
+// address in (a connected wallet's checksummed form, a raw route param,
+// etc.), while wallet_address here was written from the JWT/link flow,
+// which normalizes to lowercase -- an exact match would silently return
+// null on a case mismatch instead of erroring (see the same class of bug
+// fixed in privateSendService.ts's listPrivateSendsForWallet).
 export async function getLinkedXAccountByWallet(walletAddress: string): Promise<XAccount | null> {
   const { rows } = await pool.query(
-    "SELECT wallet_address, x_user_id, x_handle FROM x_accounts WHERE wallet_address = $1",
+    "SELECT wallet_address, x_user_id, x_handle FROM x_accounts WHERE LOWER(wallet_address) = LOWER($1)",
     [walletAddress],
   );
   if (rows.length === 0) return null;

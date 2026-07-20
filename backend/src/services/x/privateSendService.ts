@@ -153,7 +153,9 @@ export interface PrivateSendRow {
   sender_wallet: string;
   sender_x_user_id: string;
   recipient_wallet: string;
-  recipient_x_user_id: string;
+  // Only set for an @handle recipient -- a #hashtag or raw wallet address
+  // resolves to a concrete wallet with no X account involved at all.
+  recipient_x_user_id: string | null;
   token: BotToken;
   amount: string;
   amount_base_units: string;
@@ -174,7 +176,7 @@ export interface CreatePrivateSendRowInput {
   senderWallet: `0x${string}`;
   senderXUserId: string;
   recipientWallet: `0x${string}`;
-  recipientXUserId: string;
+  recipientXUserId: string | null;
   token: BotToken;
   amount: string;
   amountBaseUnits: string;

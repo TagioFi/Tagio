@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { getAccount } from 'wagmi/actions'
 import { formatUnits } from 'viem'
-import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend } from '../lib/tagio'
+import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend, getWalletIdentity } from '../lib/tagio'
 import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, signAndConfirmSwapPlan, signAndConfirmSteps, createCauseOnchain, donateToCauseOnchain, withdrawFromCauseOnchain, createEscrowOnchain, acceptEscrowOnchain, cancelEscrowOnchain, deliverEscrowOnchain, releaseEscrowOnchain, forceReleaseEscrowOnchain, refundEscrowOnchain, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
@@ -997,20 +997,31 @@ function Escrow({ toast }) {
   )
 }
 
+// Cycles through the three accepted recipient formats so the plain
+// "@recipient" placeholder doesn't read as @handle-only when #hashtag and
+// a raw wallet address work too (same three kinds a plain send accepts).
+const RECIPIENT_EXAMPLES = ['@recipient', '#hashtag', '0xWalletAddress']
+
 function CreatePrivateSend({ toast, onCreated }) {
-  const [recipientHandle, setRecipientHandle] = useState('')
+  const [recipient, setRecipient] = useState('')
   const [amount, setAmount] = useState('')
   const [token, setToken] = useState('usdg')
   const [busy, setBusy] = useState(false)
+  const [exampleIndex, setExampleIndex] = useState(0)
+
+  useEffect(() => {
+    const id = setInterval(() => setExampleIndex((i) => (i + 1) % RECIPIENT_EXAMPLES.length), 2200)
+    return () => clearInterval(id)
+  }, [])
 
   const doCreate = async () => {
     const authToken = getAuthToken()
     if (!authToken) { toast('Sign in with X first'); return }
     setBusy(true)
     try {
-      await createPrivateSend({ data: { token: authToken, recipientHandle: recipientHandle.replace(/^@/, ''), amount, sendToken: token } })
-      toast(`Private send to @${recipientHandle.replace(/^@/, '')} created — sign it in the Pending tab`)
-      setRecipientHandle(''); setAmount('')
+      await createPrivateSend({ data: { token: authToken, recipient, amount, sendToken: token } })
+      toast(`Private send to ${recipient} created — sign it in the Pending tab`)
+      setRecipient(''); setAmount('')
       onCreated()
     } catch (e) {
       toast(friendlyError(e))
@@ -1026,13 +1037,16 @@ function CreatePrivateSend({ toast, onCreated }) {
         The recipient's wallet only ever shows a transfer from TagioPay's pool, never yours. Practical privacy, not cryptographic anonymity — see the docs for what that does and doesn't cover.
       </p>
       <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-        <input className="input" style={{ flex: '2 1 12rem' }} placeholder="@recipient" value={recipientHandle} onChange={(e) => setRecipientHandle(e.target.value)} />
+        <div className="placeholder-cycle-wrap" style={{ flex: '2 1 12rem' }}>
+          <input className="input" value={recipient} onChange={(e) => setRecipient(e.target.value)} />
+          {!recipient && <span key={exampleIndex} className="placeholder-cycle">{RECIPIENT_EXAMPLES[exampleIndex]}</span>}
+        </div>
         <input className="input" style={{ flex: '1 1 8rem' }} type="number" min="0" placeholder="Amount" value={amount} onChange={(e) => setAmount(e.target.value)} />
         <select className="input" style={{ flex: '0 1 7rem' }} value={token} onChange={(e) => setToken(e.target.value)}>
           <option value="usdg">USDG</option>
           <option value="native">ETH</option>
         </select>
-        <button className="btn sm" disabled={busy || !recipientHandle || !amount} onClick={doCreate}>{busy ? 'Sending…' : 'Send privately'}</button>
+        <button className="btn sm" disabled={busy || !recipient || !amount} onClick={doCreate}>{busy ? 'Sending…' : 'Send privately'}</button>
       </div>
     </div>
   )
@@ -1042,8 +1056,57 @@ const psendToken = (p) => (p.token === 'native' ? 'ETH' : 'USDG')
 const psendDecimals = (p) => (p.token === 'native' ? 18 : 6)
 const fmtPsendAmount = (p) => Number(p.amount).toLocaleString('en-US', { maximumFractionDigits: 6 })
 
+// "Who is this wallet" lookup -- whatever it's publicly known as (a linked
+// X handle, top hashtags by volume), surfaced from a private send's
+// recipient address so the sender can see who they actually sent to.
+function WalletIdentityModal({ wallet, onClose }) {
+  const query = useQuery({ queryKey: ['wallet-identity', wallet], queryFn: () => getWalletIdentity({ data: wallet }), enabled: !!wallet })
+  const identity = query.data
+  const hasNothing = identity && !identity.xHandle && identity.hashtags.length === 0
+
+  return (
+    <div className="modal-scrim" onClick={onClose}>
+      <div className="card pad-lg fade-in" style={{ maxWidth: '24rem', width: '90%' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+          <div className="eyebrow">Known as</div>
+          <button className="btn ghost sm" onClick={onClose}><span className="circ">{I.x}</span></button>
+        </div>
+        <div className="addr-mono" style={{ marginBottom: '0.85rem' }}>{wallet}</div>
+        {query.isLoading ? (
+          <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>Loading…</p>
+        ) : hasNothing ? (
+          <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>Nothing publicly known about this wallet yet.</p>
+        ) : (
+          <>
+            {identity.xHandle && (
+              <div style={{ marginBottom: '0.75rem' }}>
+                <div className="eyebrow" style={{ marginBottom: '0.3rem' }}>X handle</div>
+                <a href={`https://x.com/${identity.xHandle}`} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
+                  <img src="/x.png" alt="" style={{ width: '0.85rem', height: '0.85rem', borderRadius: '0.2rem' }} /> @{identity.xHandle}
+                </a>
+              </div>
+            )}
+            {identity.hashtags.length > 0 && (
+              <div>
+                <div className="eyebrow" style={{ marginBottom: '0.3rem' }}>Top hashtags</div>
+                {identity.hashtags.map((h) => (
+                  <div key={h.hashtag} className="route-line" style={{ fontSize: '0.85rem' }}>
+                    <span>#{h.hashtag}</span>
+                    <span style={{ color: 'var(--ink-faint)' }}>{h.name || ''}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
 function PrivateSendRow({ row, address, toast, onChanged }) {
   const [busy, setBusy] = useState(false)
+  const [identityWallet, setIdentityWallet] = useState(null)
   const isSender = address && row.senderWallet?.toLowerCase() === address.toLowerCase()
   const isRecipient = address && row.recipientWallet?.toLowerCase() === address.toLowerCase()
   const statusPill = row.status === 'claimed' ? 'ok' : row.status === 'failed' ? '' : 'warn'
@@ -1073,13 +1136,14 @@ function PrivateSendRow({ row, address, toast, onChanged }) {
         <span className={'pill ' + statusPill}>{row.status.replace('_', ' ')}</span>
       </div>
       <div style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', margin: '0.5rem 0' }}>
-        {isSender && <>to {short(row.recipientWallet)} — their wallet only sees TagioPay's pool, not you</>}
-        {isRecipient && <>from TagioPay's pool — the sender's own wallet is never shown</>}
+        {isSender && <>to <button className="link-btn" onClick={() => setIdentityWallet(row.recipientWallet)}>{short(row.recipientWallet)}</button> — their wallet only sees TagioPay's pool, not you</>}
+        {isRecipient && <>from an Unknown Sender</>}
         {row.claimedBy && <> · claimed by {row.claimedBy === 'keeper' ? "TagioPay's keeper" : 'you'}</>}
       </div>
       {isRecipient && row.status === 'sent' && (
         <button className="btn sm" disabled={busy} onClick={doClaim}>{busy ? 'Signing…' : 'Claim now (skip the keeper)'}</button>
       )}
+      {identityWallet && <WalletIdentityModal wallet={identityWallet} onClose={() => setIdentityWallet(null)} />}
     </div>
   )
 }
