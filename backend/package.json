@@ -9,12 +9,14 @@
     "test": "bun test --concurrency=1"
   },
   "dependencies": {
+    "@types/qrcode": "^1.5.6",
     "cors": "^2.8.6",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "ioredis": "^5.11.1",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.3",
+    "qrcode": "^1.5.4",
     "viem": "^2.21.0"
   },
   "devDependencies": {

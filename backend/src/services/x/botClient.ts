@@ -120,6 +120,43 @@ export async function replyToMention(tweetId: string, text: string): Promise<voi
   });
 }
 
+// Uses the same OAuth 2.0 user-context bearer token as every other call here
+// -- X's v2 media upload endpoint accepts it directly, so this never needs
+// the older v1.1 endpoint's OAuth 1.0a signing (the X_API_KEY/X_API_SECRET/
+// X_ACCESS_TOKEN_SECRET env vars are unused leftovers from the dev portal
+// setup, not something this bot's auth relies on).
+export async function uploadMedia(buffer: Buffer, mimeType: string): Promise<string> {
+  const accessToken = await getValidBotAccessToken();
+  const form = new FormData();
+  form.append("media", new Blob([buffer], { type: mimeType }), "receipt.png");
+  form.append("media_category", "tweet_image");
+
+  const res = await fetch(`${API_BASE}/media/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    log.error("x_api_call_failed", { path: "/media/upload", status: res.status });
+    throw new XApiError(res.status, `X API /media/upload failed: ${res.status} ${body}`);
+  }
+  const json = (await res.json()) as { data: { id: string } };
+  return json.data.id;
+}
+
+export async function replyToMentionWithMedia(tweetId: string, text: string, mediaId: string): Promise<void> {
+  await authedFetch("/tweets", {
+    method: "POST",
+    body: JSON.stringify({
+      text,
+      reply: { in_reply_to_tweet_id: tweetId },
+      media: { media_ids: [mediaId] },
+    }),
+  });
+}
+
 export async function replyToDirectMessage(dmConversationId: string, text: string): Promise<void> {
   await authedFetch(`/dm_conversations/${dmConversationId}/messages`, {
     method: "POST",

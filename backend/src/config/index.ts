@@ -12,6 +12,10 @@ export const config = {
     nftAddress: (process.env.ROBINHOOD_NFT_ADDRESS ?? "") as `0x${string}`,
     settlementTokenAddress: (process.env.ROBINHOOD_SETTLEMENT_TOKEN_ADDRESS ?? "") as `0x${string}`,
     usdgAddress: (process.env.ROBINHOOD_USDG_ADDRESS ?? "") as `0x${string}`,
+    // Mainnet Blockscout instance -- confirmed via docs.robinhood.com/chain/connecting
+    // (2026-07-20; that page's "Mainnet" column also matches ROBINHOOD_RPC_URL's
+    // default above, confirming it's the right column, not the testnet one).
+    explorerUrl: process.env.ROBINHOOD_EXPLORER_URL ?? "https://robinhoodchain.blockscout.com",
   },
 
   // Canonical per developers.uniswap.org's v3/v4 Robinhood Chain deployment pages
