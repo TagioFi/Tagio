@@ -270,7 +270,7 @@ h1.headline .l2 .accent{ color:var(--green); }
 #app .pill.warn{ background:rgba(201,138,23,0.1); border-color:rgba(201,138,23,0.3); color:var(--amber); }
 #app .eyebrow{ font-size:0.75rem; text-transform:uppercase; letter-spacing:0.09em; color:var(--ink-faint); font-weight:500; }
 #app .mono{ font-variant-numeric:tabular-nums; }
-#app .addr-mono{ font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:0.85rem; color:var(--ink-soft); }
+#app .addr-mono{ font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:0.85rem; color:var(--ink-soft); overflow-wrap:anywhere; }
 #app .link-btn{ color:var(--green-deep); text-decoration:underline; font-size:inherit; }
 #app .cmd-block{ background:var(--background); border:1px solid var(--hairline); border-radius:var(--radius-sm); padding:0.85rem 1rem; font-family:ui-monospace, "SF Mono", Menlo, monospace; font-size:0.85rem; line-height:1.7; color:var(--ink); overflow-x:auto; white-space:pre; }
 #app .cmd-block + .cmd-block{ margin-top:0.5rem; }

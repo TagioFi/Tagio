@@ -1071,7 +1071,7 @@ function WalletIdentityModal({ wallet, onClose }) {
           <div className="eyebrow">Known as</div>
           <button className="btn ghost sm" onClick={onClose}><span className="circ">{I.x}</span></button>
         </div>
-        <div className="addr-mono" style={{ marginBottom: '0.85rem' }}>{wallet}</div>
+        <div className="addr-mono" style={{ marginBottom: '0.85rem', overflowWrap: 'anywhere' }}>{wallet}</div>
         {query.isLoading ? (
           <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>Loading…</p>
         ) : hasNothing ? (
@@ -1081,8 +1081,9 @@ function WalletIdentityModal({ wallet, onClose }) {
             {identity.xHandle && (
               <div style={{ marginBottom: '0.75rem' }}>
                 <div className="eyebrow" style={{ marginBottom: '0.3rem' }}>X handle</div>
-                <a href={`https://x.com/${identity.xHandle}`} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                  <img src="/x.png" alt="" style={{ width: '0.85rem', height: '0.85rem', borderRadius: '0.2rem' }} /> @{identity.xHandle}
+                <a href={`https://x.com/${identity.xHandle}`} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)', display: 'inline-flex', alignItems: 'center', gap: '0.4rem', verticalAlign: 'middle' }}>
+                  <img src="/x.png" alt="" style={{ width: '1.2rem', height: '1.2rem', borderRadius: '0.3rem', flex: 'none', display: 'block' }} />
+                  <span>@{identity.xHandle}</span>
                 </a>
               </div>
             )}
@@ -1210,8 +1211,9 @@ const titleCase = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s)
 function TweetLink({ url }) {
   if (!url) return null
   return (
-    <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-      <img src="/x.png" alt="" style={{ width: '0.85rem', height: '0.85rem', borderRadius: '0.2rem', flex: 'none' }} /> view tweet
+    <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', verticalAlign: 'middle' }}>
+      <img src="/x.png" alt="" style={{ width: '1rem', height: '1rem', borderRadius: '0.25rem', flex: 'none', display: 'block' }} />
+      <span>view tweet</span>
     </a>
   )
 }
