@@ -50,6 +50,7 @@ const I = {
   heart: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" /></svg>,
   shield: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z" /><polyline points="9 12 11 14 15 10" /></svg>,
   lock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>,
+  terminal: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 6 10 12 4 18" /><line x1="12" y1="18" x2="20" y2="18" /></svg>,
 }
 
 /* ---------- helpers ---------- */
@@ -1233,6 +1234,7 @@ const ROUTES = [
   { id: 'psend', label: 'Private Send', icon: I.lock },
   { id: 'pending', label: 'Pending', icon: I.clock },
   { id: 'activity', label: 'Activity', icon: I.act },
+  { id: 'x-commands', label: 'X commands', icon: I.terminal, to: '/x-commands-list' },
 ]
 
 export default function Dashboard() {
@@ -1393,7 +1395,10 @@ export default function Dashboard() {
         <div className={'scrim ' + (drawer ? 'show' : '')} onClick={() => setDrawer(false)}></div>
         <aside className={'sidebar ' + (drawer ? 'open' : '')}>
           <Link className="brand" to="/"><span className="brand-logo" role="img" aria-label="Tagio"></span></Link>
-          <nav className="nav">{ROUTES.map((r) => <button key={r.id} className={'nav-item ' + (view === r.id ? 'active' : '')} onClick={() => go(r.id)}>{r.icon}{r.label}</button>)}</nav>
+          <nav className="nav">{ROUTES.map((r) => r.to
+            ? <Link key={r.id} className="nav-item" to={r.to}>{r.icon}{r.label}</Link>
+            : <button key={r.id} className={'nav-item ' + (view === r.id ? 'active' : '')} onClick={() => go(r.id)}>{r.icon}{r.label}</button>
+          )}</nav>
           <div className="side-spacer"></div>
           <div className="net-chip"><span className="live"></span>Robinhood Chain · L2</div>
           <WalletControl variant="chip" />

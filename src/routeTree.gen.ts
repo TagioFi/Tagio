@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as XCommandsListRouteImport } from './routes/x-commands-list'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as HNameRouteImport } from './routes/h.$name'
 import { Route as AuthCallbackRouteImport } from './routes/auth/callback'
 
+const XCommandsListRoute = XCommandsListRouteImport.update({
+  id: '/x-commands-list',
+  path: '/x-commands-list',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
@@ -38,12 +44,14 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/x-commands-list': typeof XCommandsListRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/h/$name': typeof HNameRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/x-commands-list': typeof XCommandsListRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/h/$name': typeof HNameRoute
 }
@@ -51,26 +59,46 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dashboard': typeof DashboardRoute
+  '/x-commands-list': typeof XCommandsListRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/h/$name': typeof HNameRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/dashboard' | '/auth/callback' | '/h/$name'
+  fullPaths:
+    | '/'
+    | '/dashboard'
+    | '/x-commands-list'
+    | '/auth/callback'
+    | '/h/$name'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/dashboard' | '/auth/callback' | '/h/$name'
-  id: '__root__' | '/' | '/dashboard' | '/auth/callback' | '/h/$name'
+  to: '/' | '/dashboard' | '/x-commands-list' | '/auth/callback' | '/h/$name'
+  id:
+    | '__root__'
+    | '/'
+    | '/dashboard'
+    | '/x-commands-list'
+    | '/auth/callback'
+    | '/h/$name'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DashboardRoute: typeof DashboardRoute
+  XCommandsListRoute: typeof XCommandsListRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   HNameRoute: typeof HNameRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/x-commands-list': {
+      id: '/x-commands-list'
+      path: '/x-commands-list'
+      fullPath: '/x-commands-list'
+      preLoaderRoute: typeof XCommandsListRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dashboard': {
       id: '/dashboard'
       path: '/dashboard'
@@ -105,6 +133,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DashboardRoute: DashboardRoute,
+  XCommandsListRoute: XCommandsListRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   HNameRoute: HNameRoute,
 }
