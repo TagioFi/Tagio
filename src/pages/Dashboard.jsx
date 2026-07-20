@@ -1115,6 +1115,18 @@ function PrivateSend({ toast }) {
 const tokenLabel = (row) => (row.token === 'native' ? 'ETH' : 'USDG')
 const titleCase = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s)
 
+// Shared by the Pending tab and the on-load PendingModal -- the tweet/DM
+// that triggered a request only has a public link to show for mentions
+// (DMs have no tweet_url at all), same as postReceiptReply on the backend.
+function TweetLink({ url }) {
+  if (!url) return null
+  return (
+    <a href={url} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+      <img src="/x.png" alt="" style={{ width: '0.85rem', height: '0.85rem', borderRadius: '0.2rem', flex: 'none' }} /> view tweet
+    </a>
+  )
+}
+
 function PendingRowLabel({ row }) {
   if (row.kind === 'swap') {
     return <b style={{ fontWeight: 500 }}>Swap {row.amount} {row.token} → {row.target_value}</b>
@@ -1186,7 +1198,7 @@ function Pending({ rows, loading, busyId, sign, dismiss }) {
                     <span style={{ color: 'var(--red, #c0392b)' }}>high price impact (~{Math.abs(Number(row.price_impact_pct)).toFixed(1)}%) · </span>
                   )}
                   {fmtWhen(row.created_at)}
-                  {row.tweet_url && (<> · <a href={row.tweet_url} target="_blank" rel="noreferrer" style={{ color: 'var(--green-deep)' }}>view tweet</a></>)}
+                  {row.tweet_url && <> · <TweetLink url={row.tweet_url} /></>}
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1215,7 +1227,7 @@ function PendingModal({ rows, busyId, sign, dismiss, onViewAll, onClose }) {
       <div className="card pad-lg fade-in" style={{ maxWidth: '32rem', width: '90%', maxHeight: '80vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
           <div className="eyebrow">Waiting on your signature</div>
-          <button className="btn ghost sm" onClick={onClose}>{I.x}</button>
+          <button className="btn ghost sm" onClick={onClose}><span className="circ">{I.x}</span></button>
         </div>
         <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1rem' }}>
           {rows.length} request{rows.length === 1 ? '' : 's'} from the X bot {rows.length === 1 ? 'is' : 'are'} ready to review.
@@ -1226,7 +1238,10 @@ function PendingModal({ rows, busyId, sign, dismiss, onViewAll, onClose }) {
               <span className="act-ic in">{I.clock}</span>
               <div>
                 <PendingRowLabel row={row} />
-                <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>{fmtWhen(row.created_at)}</div>
+                <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>
+                  {fmtWhen(row.created_at)}
+                  {row.tweet_url && <> · <TweetLink url={row.tweet_url} /></>}
+                </div>
               </div>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <button className="btn ghost sm" disabled={busyId === row.id} onClick={() => dismiss(row)}>Decline</button>
