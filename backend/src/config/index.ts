@@ -98,7 +98,7 @@ export const config = {
     privateKey: process.env.KEEPER_PRIVATE_KEY ?? "",
     // How often the keeper scans for claimable private sends it should
     // auto-claim on the recipient's behalf.
-    pollIntervalMs: parseInt(process.env.KEEPER_POLL_INTERVAL_MS ?? "60000", 10),
+    pollIntervalMs: parseInt(process.env.KEEPER_POLL_INTERVAL_MS ?? "25000", 10),
     // Below this, the keeper skips claiming (would spend more than it has)
     // and logs a low-balance warning instead of trying and failing.
     // Recalibrated 2026-07-20 after the first live claim: a real claim()

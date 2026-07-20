@@ -268,9 +268,15 @@ export async function recordKeeperAttemptFailure(id: number, error: string): Pro
   );
 }
 
+// Case-insensitive on both sides: the wallet param here comes straight from
+// the connected wallet's checksummed (mixed-case) address, while
+// sender_wallet/recipient_wallet were written from the JWT/x_accounts flow,
+// which normalizes to lowercase -- an exact-match comparison would silently
+// return zero rows on that mismatch instead of erroring, which is exactly
+// what made this look like "no history" rather than a real bug.
 export async function listPrivateSendsForWallet(wallet: string): Promise<PrivateSendRow[]> {
   const { rows } = await pool.query(
-    "SELECT * FROM private_sends WHERE sender_wallet = $1 OR recipient_wallet = $1 ORDER BY created_at DESC",
+    "SELECT * FROM private_sends WHERE LOWER(sender_wallet) = LOWER($1) OR LOWER(recipient_wallet) = LOWER($1) ORDER BY created_at DESC",
     [wallet],
   );
   return rows;
