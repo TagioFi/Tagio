@@ -429,7 +429,7 @@ function Send({ toast }) {
               <button className="btn" disabled={pay.status === 'busy'} onClick={sendOnchain} style={{ justifyContent: 'center', width: '100%', marginTop: '1rem' }}>{pay.status === 'busy' ? 'Confirm in wallet…' : `Send ${fmt(amt)} ETH onchain`}<span className="circ">{I.check}</span></button>
             )}
             {pay.status === 'error' && (<div className="split-total bad" style={{ marginTop: '0.75rem' }}>{pay.message}</div>)}
-            {pay.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Payment settled onchain · indexed by the backend</div>)}
+            {pay.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Payment settled onchain</div>)}
             <Link className="btn ghost" to="/h/$name" params={{ name: resolved.hashtag }} style={{ justifyContent: 'center', width: '100%', marginTop: '0.75rem' }}>View #{resolved.hashtag} record <span className="circ">{I.chevron}</span></Link>
           </div>
         )}
@@ -647,7 +647,7 @@ function Trade({ toast }) {
               </button>
             )}
             {trade.status === 'error' && (<div className="split-total bad" style={{ marginTop: '0.75rem' }}>{trade.message}</div>)}
-            {trade.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Swap settled onchain — indexed by the backend</div>)}
+            {trade.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Swap settled onchain</div>)}
           </div>
         )}
       </div>

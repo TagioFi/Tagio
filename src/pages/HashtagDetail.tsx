@@ -168,7 +168,7 @@ function SyncTransaction({ hashtag }: { hashtag: string }) {
         onClick={sync}
         style={{ justifyContent: "center", width: "100%" }}
       >
-        {state.status === "syncing" ? "Syncing…" : "Confirm with backend"}
+        {state.status === "syncing" ? "Syncing…" : "Confirm"}
       </button>
       {state.status === "done" && (
         <div className="split-total ok" style={{ marginTop: "0.75rem" }}>
