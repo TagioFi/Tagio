@@ -35,6 +35,26 @@ async function saveToken(accessToken: string, refreshToken: string, expiresAt: D
   );
 }
 
+// X's refresh tokens rotate (single-use) -- pollMentions (every 30s) and
+// pollDirectMessages (every 90s) call this independently, and without this
+// lock, two callers landing on the same near-expiry token at once would both
+// fire refreshAccessToken with the SAME refresh token concurrently. Only one
+// can actually consume it; the other fails with exactly the "invalid_request:
+// Value passed for the token was invalid" error seen in production 2026-07-26
+// -- and if X treats that reuse as a replay signal, it can revoke the whole
+// token chain rather than just failing the one request, which is consistent
+// with the multi-day outage this caused. Concurrent callers now share one
+// in-flight refresh instead of racing separate ones.
+let inFlightRefresh: Promise<string> | null = null;
+
+async function refreshAndSave(stored: StoredBotToken): Promise<string> {
+  const refreshed = await refreshAccessToken(stored.refreshToken);
+  const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
+  const newRefreshToken = refreshed.refresh_token ?? stored.refreshToken;
+  await saveToken(refreshed.access_token, newRefreshToken, expiresAt);
+  return refreshed.access_token;
+}
+
 // Returns a live access token for the bot's own X account, refreshing (and
 // persisting the newly-rotated refresh token) whenever the current one is
 // missing or close to expiry. First-ever call has no known expiry for the
@@ -50,9 +70,10 @@ export async function getValidBotAccessToken(): Promise<string> {
     return stored.accessToken;
   }
 
-  const refreshed = await refreshAccessToken(stored.refreshToken);
-  const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000);
-  const newRefreshToken = refreshed.refresh_token ?? stored.refreshToken;
-  await saveToken(refreshed.access_token, newRefreshToken, expiresAt);
-  return refreshed.access_token;
+  if (!inFlightRefresh) {
+    inFlightRefresh = refreshAndSave(stored).finally(() => {
+      inFlightRefresh = null;
+    });
+  }
+  return inFlightRefresh;
 }
