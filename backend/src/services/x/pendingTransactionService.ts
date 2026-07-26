@@ -447,10 +447,17 @@ export async function createPendingPrivateSendClaim(
   return rows.length === 0 ? null : { id: rows[0].id };
 }
 
+// Case-insensitive on both sides: requested_by_wallet is written from the X-bot/
+// dapp flow (often lowercase, e.g. from x_accounts), while walletAddress here comes
+// from the connected wallet's checksummed (mixed-case) session -- an exact-match
+// comparison would silently return zero rows on that mismatch instead of erroring,
+// which looks exactly like "no pending requests" rather than a real bug (confirmed
+// live 2026-07-26: jimaizrh's own pending request was invisible on their dashboard
+// for exactly this reason).
 export async function listPendingForWallet(walletAddress: string) {
   const { rows } = await pool.query(
     `SELECT * FROM pending_transactions
-     WHERE requested_by_wallet = $1 AND status = 'pending'
+     WHERE LOWER(requested_by_wallet) = LOWER($1) AND status = 'pending'
      ORDER BY created_at DESC`,
     [walletAddress],
   );
@@ -459,7 +466,7 @@ export async function listPendingForWallet(walletAddress: string) {
 
 export async function getPendingTransaction(id: number, walletAddress: string) {
   const { rows } = await pool.query(
-    "SELECT * FROM pending_transactions WHERE id = $1 AND requested_by_wallet = $2",
+    "SELECT * FROM pending_transactions WHERE id = $1 AND LOWER(requested_by_wallet) = LOWER($2)",
     [id, walletAddress],
   );
   return rows.length === 0 ? null : rows[0];
