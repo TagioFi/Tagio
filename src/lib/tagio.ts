@@ -65,12 +65,28 @@ function apiUrl(path: string) {
   return base.replace(/\/+$/, "") + path;
 }
 
+// A 401 is a *session* problem, not a request problem: the stored JWT is
+// missing, expired, or no longer accepted. Callers have to be able to tell the
+// two apart -- otherwise a dead session reads as "the server said you have
+// nothing", which is exactly how an expired token used to blank the dashboard's
+// Pending tab. One exported string so the throw site and every check agree.
+export const SESSION_EXPIRED_MESSAGE = "Your TagioPay session expired — reconnect your wallet to continue.";
+
+// Matched on the message rather than an error subclass on purpose: these throws
+// originate inside a server function, so what the client catches is a
+// re-created Error, not the instance thrown on the server.
+export function isSessionExpiredError(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err ?? "");
+  return message.includes(SESSION_EXPIRED_MESSAGE);
+}
+
 async function apiFetch(path: string, init?: RequestInit, okStatuses: number[] = [404]): Promise<Response> {
   const res = await fetch(apiUrl(path), {
     ...init,
     headers: { accept: "application/json", ...(init?.headers ?? {}) },
   });
   if (!res.ok && !okStatuses.includes(res.status)) {
+    if (res.status === 401) throw new Error(SESSION_EXPIRED_MESSAGE);
     let detail = "";
     try {
       const body = (await res.json()) as { error?: string };

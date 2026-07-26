@@ -22,6 +22,47 @@ export function clearAuthToken(): void {
   localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
+// Treat a token as dead slightly before its stated expiry so one that lapses
+// mid-flight doesn't come back as a surprise 401.
+const EXPIRY_MARGIN_MS = 30 * 1000;
+
+// The backend signs 7-day JWTs (backend/src/routes/auth.ts:20) and rejects an
+// expired one with a 401 (middleware/auth.ts:21), so the mere presence of *a*
+// string in localStorage is not proof of a live session. Reading `exp` here is
+// what lets the dashboard re-run sign-in on load instead of sitting on a dead
+// token, 401ing every request behind a UI that still looks signed in.
+function tokenExpiresAt(token: string): number | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
+    return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+// Fail-open on an unreadable/exp-less token: the server is the real authority,
+// and a parse quirk here must not lock a genuinely valid session out. An
+// actually-dead token is still caught by the 401 path (see
+// isSessionExpiredError in ./tagio).
+export function isAuthTokenLive(token: string | null): boolean {
+  if (!token) return false;
+  const expiresAt = tokenExpiresAt(token);
+  return expiresAt === null || Date.now() < expiresAt - EXPIRY_MARGIN_MS;
+}
+
+// Same as getAuthToken, but never hands back an expired token -- and clears it
+// on the way out so the next read can't resurrect it. Callers that gate UI or
+// fire authed requests should prefer this.
+export function getLiveAuthToken(): string | null {
+  const token = getAuthToken();
+  if (!token) return null;
+  if (isAuthTokenLive(token)) return token;
+  clearAuthToken();
+  return null;
+}
+
 export type SignInOutcome =
   | { status: "signed_in"; token: string; xHandle: string }
   | { status: "redirecting_to_x" };
