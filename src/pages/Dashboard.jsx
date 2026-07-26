@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
@@ -1203,12 +1203,41 @@ function PrivateSend({ toast }) {
 // view is where the loop actually closes: list -> sign with the connected
 // wallet -> report the resulting tx_hash back so the backend can verify it
 // landed onchain before marking it done.
-// Shared by the Pending tab and the on-load PendingModal so the two never
+// Shared by the Pending tab and the on-load PendingNudge so the two never
 // drift apart on how a row's headline reads.
 const tokenLabel = (row) => (row.token === 'native' ? 'ETH' : 'USDG')
 const titleCase = (s) => (s ? s[0].toUpperCase() + s.slice(1) : s)
 
-// Shared by the Pending tab and the on-load PendingModal -- the tweet/DM
+// Plain-text mirror of <PendingRowLabel> for the OS notification body, which
+// can't take JSX. Covers the common kinds with a sensible generic fallback.
+const describePendingText = (row) => {
+  const t = tokenLabel(row)
+  switch (row.kind) {
+    case 'swap': return `Swap ${row.amount} ${row.token} → ${row.target_value}`
+    case 'deposit': return `${row.amount} ${t} → @${row.target_value} (escrowed)`
+    case 'claim': return `Claim ${row.amount} ${t} from escrow`
+    case 'psend': return `Private send ${row.amount} ${t}`
+    case 'psend_claim': return `Claim private send${row.amount && row.amount !== '0' ? ` ${row.amount} ${t}` : ''}`
+    case 'cause': return `Cause · ${titleCase(row.target_type?.replace('cause_', ''))}${row.amount ? ` ${row.amount} ${t}` : ''}`
+    case 'escrow': return `Escrow · ${titleCase(row.target_type?.replace('escrow_', ''))}${row.amount ? ` ${row.amount} ${t}` : ''}`
+    default: {
+      const dest = row.target_type === 'hashtag' ? '#' + row.target_value : row.target_type === 'x_account' ? '@' + row.target_value : short(row.target_value)
+      return `${row.amount} ${t} → ${dest}`
+    }
+  }
+}
+// Compact countdown: hours+minutes while there's plenty of time, minutes+seconds
+// in the last hour so the ticking clock actually conveys urgency.
+const fmtCountdown = (ms) => {
+  if (ms <= 0) return 'now'
+  const s = Math.floor(ms / 1000)
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60
+  if (h > 0) return `${h}h ${m}m`
+  if (m > 0) return `${m}m ${String(sec).padStart(2, '0')}s`
+  return `${sec}s`
+}
+
+// Shared by the Pending tab and the on-load PendingNudge -- the tweet/DM
 // that triggered a request only has a public link to show for mentions
 // (DMs have no tweet_url at all), same as postReceiptReply on the backend.
 function TweetLink({ url }) {
@@ -1307,48 +1336,49 @@ function Pending({ rows, loading, busyId, sign, dismiss }) {
   )
 }
 
-// On-load nudge: if there's anything waiting on your signature, surface the
-// 5 most recent right away instead of making you discover the Pending tab
-// on your own. Dismissing the modal just hides it for this visit -- it
-// doesn't decline anything; the full list is always still in the Pending
-// tab.
-function PendingModal({ rows, busyId, sign, dismiss, onViewAll, onClose }) {
-  const shown = rows.slice(0, 5)
-  const remaining = rows.length - shown.length
-
+// On-load nudge, bottom-right: the moment you land, the request closest to
+// expiring surfaces as a non-blocking toast with a live countdown to its 24h
+// window -- so anything waiting on your signature is visible without a
+// blocking modal. "Complete now" jumps to the full Pending tab; dismissing
+// just hides the current batch for this visit (it declines nothing, and a
+// newly-arrived request re-surfaces it). Pairs with the browser push
+// notification fired from the dashboard when a request first appears.
+function PendingNudge({ rows, notifPerm, onComplete, onDismiss, onEnableAlerts }) {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  // Soonest-to-expire first; rows carrying an expiry win over any that lack one.
+  const withExpiry = rows.filter((r) => r.expires_at)
+  const top = (withExpiry.length ? withExpiry : rows)
+    .slice()
+    .sort((a, b) => new Date(a.expires_at || a.created_at) - new Date(b.expires_at || b.created_at))[0]
+  const expMs = top.expires_at ? new Date(top.expires_at).getTime() : null
+  const createdMs = new Date(top.created_at).getTime()
+  const remaining = expMs != null ? expMs - now : null
+  const total = expMs != null ? Math.max(1, expMs - createdMs) : 1
+  const pct = remaining != null ? Math.max(0, Math.min(100, (remaining / total) * 100)) : 100
+  const urgency = remaining == null ? 'ok' : remaining < 10 * 60000 ? 'crit' : remaining < 60 * 60000 ? 'warn' : 'ok'
   return (
-    <div className="modal-scrim" onClick={onClose}>
-      <div className="card pad-lg fade-in" style={{ maxWidth: '32rem', width: '90%', maxHeight: '80vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
-          <div className="eyebrow">Waiting on your signature</div>
-          <button className="btn ghost sm" onClick={onClose}><span className="circ">{I.x}</span></button>
+    <div className={'pending-nudge ' + urgency} role="alert" aria-live="polite">
+      <button className="pn-close" onClick={onDismiss} aria-label="Dismiss">{I.x}</button>
+      <div className="pn-head"><span className="pn-ic">{I.clock}</span>Complete your transaction</div>
+      <div className="pn-body"><PendingRowLabel row={top} /></div>
+      {remaining != null ? (
+        <div className="pn-timer">
+          <div className="pn-bar"><span style={{ width: pct + '%' }} /></div>
+          <div className="pn-meta">
+            <span>{remaining > 0 ? 'Expires in ' + fmtCountdown(remaining) : 'Expired — dismiss or retry'}</span>
+            {rows.length > 1 && <span>+{rows.length - 1} more waiting</span>}
+          </div>
         </div>
-        <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', marginBottom: '1rem' }}>
-          {rows.length} request{rows.length === 1 ? '' : 's'} from the X bot or DApp {rows.length === 1 ? 'is' : 'are'} ready to review.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-          {shown.map((row) => (
-            <div key={row.id} className="act-row" style={{ gridTemplateColumns: '2rem 1fr auto', alignItems: 'center' }}>
-              <span className="act-ic in">{I.clock}</span>
-              <div>
-                <PendingRowLabel row={row} />
-                <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)' }}>
-                  {fmtWhen(row.created_at)}
-                  {row.tweet_url && <> · <TweetLink url={row.tweet_url} /></>}
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <button className="btn ghost sm" disabled={busyId === row.id} onClick={() => dismiss(row)}>Decline</button>
-                <button className="btn sm" disabled={busyId === row.id} onClick={() => sign(row)}>{busyId === row.id ? 'Signing…' : 'Accept'}</button>
-              </div>
-            </div>
-          ))}
-        </div>
-        {remaining > 0 && (
-          <button className="btn ghost sm" onClick={onViewAll} style={{ width: '100%', justifyContent: 'center', marginTop: '1rem' }}>
-            + {remaining} more · view full list in Pending
-          </button>
-        )}
+      ) : rows.length > 1 && (
+        <div className="pn-meta" style={{ marginTop: '0.6rem' }}><span>{rows.length} requests waiting</span></div>
+      )}
+      <div className="pn-actions">
+        <button className="btn sm" onClick={onComplete}>Complete now <span className="circ">{I.chevron}</span></button>
+        {notifPerm === 'default' && <button className="btn ghost sm" onClick={onEnableAlerts}>Enable alerts</button>}
       </div>
     </div>
   )
@@ -1458,6 +1488,11 @@ export default function Dashboard() {
   // *new* request arriving later (via the poll above) still pops the modal
   // even if an earlier batch was already dismissed this session.
   const [dismissedPendingIds, setDismissedPendingIds] = useState(() => new Set())
+  // Browser push-notification permission (synced after mount to dodge an
+  // SSR/hydration mismatch on the "Enable alerts" button), and the ids we've
+  // already fired an OS notification for this session so a re-poll doesn't spam.
+  const [notifPerm, setNotifPerm] = useState('unsupported')
+  const notifiedRef = useRef(new Set())
   const hasUndismissedPending = pendingRows.some((r) => !dismissedPendingIds.has(r.id))
   const dismissPendingModal = () => setDismissedPendingIds((prev) => new Set([...prev, ...pendingRows.map((r) => r.id)]))
   const refreshPending = () => queryClient.invalidateQueries({ queryKey: ['pending-transactions'] })
@@ -1514,6 +1549,45 @@ export default function Dashboard() {
     } finally {
       setRenewing(null)
     }
+  }
+
+  // Reflect the real notification permission once mounted (kept out of the
+  // initial state so the server and first client render agree).
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) setNotifPerm(Notification.permission)
+  }, [])
+
+  // Fire an OS push notification for each request we haven't announced yet, so
+  // "complete the transaction" reaches you even when this tab isn't focused.
+  // Permission is requested opportunistically here; the gesture-driven "Enable
+  // alerts" button on the nudge is the reliable path when a browser suppresses
+  // the un-prompted request. The in-app nudge is always the guaranteed channel.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    const fresh = pendingRows.filter((r) => !notifiedRef.current.has(r.id))
+    if (fresh.length === 0) return
+    fresh.forEach((r) => notifiedRef.current.add(r.id))
+    const fire = () => {
+      const n = new Notification('Transaction waiting for your signature', {
+        body: describePendingText(fresh[0]) + (fresh.length > 1 ? ` · +${fresh.length - 1} more` : ''),
+        icon: '/favicon.png',
+        tag: 'tagio-pending',
+      })
+      n.onclick = () => { window.focus(); go('pending'); n.close() }
+    }
+    if (Notification.permission === 'granted') fire()
+    else if (Notification.permission === 'default') Notification.requestPermission().then((perm) => { setNotifPerm(perm); if (perm === 'granted') fire() })
+  }, [pendingRows])
+
+  const enableAlerts = () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return
+    Notification.requestPermission().then((perm) => {
+      setNotifPerm(perm)
+      if (perm === 'granted' && pendingRows[0]) {
+        const n = new Notification("Alerts on — we'll ping you here", { body: describePendingText(pendingRows[0]), icon: '/favicon.png', tag: 'tagio-pending' })
+        n.onclick = () => { window.focus(); go('pending'); n.close() }
+      }
+    })
   }
 
   const titles = {
@@ -1580,20 +1654,21 @@ export default function Dashboard() {
             )}
           </div>
         </main>
-        <div className="toasts">{toasts.map((t) => <div className="toast" key={t.id}><span className="dot"></span>{t.msg}</div>)}</div>
+        <div className="toasts">
+          {authStatus === 'signed_in' && hasUndismissedPending && view !== 'pending' && (
+            <PendingNudge
+              rows={pendingRows.filter((r) => !dismissedPendingIds.has(r.id))}
+              notifPerm={notifPerm}
+              onComplete={() => go('pending')}
+              onDismiss={dismissPendingModal}
+              onEnableAlerts={enableAlerts}
+            />
+          )}
+          {toasts.map((t) => <div className="toast" key={t.id}><span className="dot"></span>{t.msg}</div>)}
+        </div>
       </div>
       {address && authStatus !== 'signed_in' && (
         <AuthGate status={authStatus} error={authError} onRetry={() => setAuthAttempt((n) => n + 1)} />
-      )}
-      {authStatus === 'signed_in' && hasUndismissedPending && view !== 'pending' && (
-        <PendingModal
-          rows={pendingRows}
-          busyId={pendingBusyId}
-          sign={signPending}
-          dismiss={dismissPending}
-          onViewAll={() => { dismissPendingModal(); go('pending') }}
-          onClose={dismissPendingModal}
-        />
       )}
     </div>
   )
