@@ -196,6 +196,9 @@ export interface PendingTransaction {
   tweet_url: string | null;
   status: string;
   created_at: string;
+  // Every request gets a 24h window (see 002_x_integration.sql); the on-load
+  // nudge counts down to this and turns urgent as it nears.
+  expires_at: string;
   // 'x_bot' for a live mention/DM command; 'giveaway' | 'airdrop' |
   // 'direct-send' when this row came from claiming a past unclaimed
   // allocation after linking an X account.
