@@ -13,8 +13,12 @@ export interface ParsedCommand {
   targetValue: string;
 }
 
+// \$? tolerates "send $1 usdg to ..." -- a dollar-denominated stablecoin makes
+// a literal "$" prefix on the amount an extremely natural typo/habit, not an
+// edge case (confirmed live 2026-07-26: a real launch-eve mention with no bot
+// reply at all, caused by exactly this gap).
 const COMMAND_PATTERN =
-  /send\s+([0-9]*\.?[0-9]+)\s+(eth|usdg)\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
+  /send\s+\$?([0-9]*\.?[0-9]+)\s+(eth|usdg)\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
 
 export function parseCommand(rawText: string): ParsedCommand | null {
   const match = rawText.match(COMMAND_PATTERN);
@@ -43,7 +47,7 @@ export interface ParsedSwapCommand {
 // Symbol validity (must resolve on the ETH/USDG/RWA allowlist, must differ)
 // is deliberately left to the caller, same division of labor as the send
 // grammar above leaves target resolution to targetResolver.ts.
-const SWAP_PATTERN = /swap\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z]{1,10})\s+to\s+([a-zA-Z]{1,10})/i;
+const SWAP_PATTERN = /swap\s+\$?([0-9]*\.?[0-9]+)\s+([a-zA-Z]{1,10})\s+to\s+([a-zA-Z]{1,10})/i;
 
 // "buy 10 NVDA with 0.5 eth" / "buy SPCX with 130 USDG" -- the leading share
 // count, if given, is descriptive only and never authoritative: every swap
@@ -54,7 +58,7 @@ const SWAP_PATTERN = /swap\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z]{1,10})\s+to\s+([a-zA-
 // user ever signs anything, so an optimistic share count here can't cause a
 // surprise spend -- only a surprise (fully disclosed, pre-signature) fill.
 const BUY_PATTERN =
-  /buy\s+(?:[0-9]*\.?[0-9]+\s+)?([a-zA-Z]{1,10})\s+with\s+([0-9]*\.?[0-9]+)\s+([a-zA-Z]{1,10})/i;
+  /buy\s+(?:[0-9]*\.?[0-9]+\s+)?([a-zA-Z]{1,10})\s+with\s+\$?([0-9]*\.?[0-9]+)\s+([a-zA-Z]{1,10})/i;
 
 export function parseSwapCommand(rawText: string): ParsedSwapCommand | null {
   const swapMatch = rawText.match(SWAP_PATTERN);
@@ -95,8 +99,8 @@ export interface ParsedCauseCommand {
 }
 
 const CAUSE_CREATE_PATTERN =
-  /\$cause\s+create\s+"([^"]+)"\s+goal:\s*([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+wallet:\s*(0x[a-fA-F0-9]{40})/i;
-const CAUSE_DONATE_PATTERN = /\$cause\s+donate\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+#CAUSE-(\d+)/i;
+  /\$cause\s+create\s+"([^"]+)"\s+goal:\s*\$?([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+wallet:\s*(0x[a-fA-F0-9]{40})/i;
+const CAUSE_DONATE_PATTERN = /\$cause\s+donate\s+\$?([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+#CAUSE-(\d+)/i;
 const CAUSE_LEADERBOARD_PATTERN = /\$cause\s+leaderboard\s+#CAUSE-(\d+)/i;
 // Withdraw amount is always denominated in whatever token the cause itself
 // was created with -- a token word may still appear in the text right after
@@ -104,7 +108,7 @@ const CAUSE_LEADERBOARD_PATTERN = /\$cause\s+leaderboard\s+#CAUSE-(\d+)/i;
 // captured or trusted, since the cause's own on-chain record is what
 // actually determines the token.
 const CAUSE_WITHDRAW_PATTERN =
-  /\$cause\s+withdraw\s+#CAUSE-(\d+)\s+([0-9]*\.?[0-9]+)\s*(?:eth|usdg|usdc)?\s+(?:to\s+)?"([^"]+)"/i;
+  /\$cause\s+withdraw\s+#CAUSE-(\d+)\s+\$?([0-9]*\.?[0-9]+)\s*(?:eth|usdg|usdc)?\s+(?:to\s+)?"([^"]+)"/i;
 
 export function parseCauseCommand(rawText: string): ParsedCauseCommand | null {
   let m = rawText.match(CAUSE_CREATE_PATTERN);
@@ -147,7 +151,7 @@ export interface ParsedDonateToNameCommand {
   causeName: string;
 }
 
-const DONATE_TO_NAME_PATTERN = /\$donate\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+"([^"]+)"/i;
+const DONATE_TO_NAME_PATTERN = /\$donate\s+\$?([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+"([^"]+)"/i;
 
 export function parseDonateToName(rawText: string): ParsedDonateToNameCommand | null {
   const m = rawText.match(DONATE_TO_NAME_PATTERN);
@@ -172,7 +176,7 @@ export interface ParsedEscrowCommand {
 }
 
 const ESCROW_CREATE_PATTERN =
-  /\$escrow\s+"([^"]+)"\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+@([a-zA-Z0-9_]{1,15})/i;
+  /\$escrow\s+"([^"]+)"\s+\$?([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+@([a-zA-Z0-9_]{1,15})/i;
 const ESCROW_ACCEPT_PATTERN = /\$accept\s+#(\d+)/i;
 const ESCROW_DELIVER_PATTERN = /\$deliver\s+#(\d+)\s+(\S+)/i;
 const ESCROW_RELEASE_PATTERN = /\$release\s+#(\d+)/i;
@@ -219,7 +223,7 @@ export interface ParsedPrivateSendCommand {
 }
 
 const PRIVATE_SEND_PATTERN =
-  /\$psend\s+([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
+  /\$psend\s+\$?([0-9]*\.?[0-9]+)\s*(eth|usdg|usdc)\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
 
 export function parsePrivateSendCommand(rawText: string): ParsedPrivateSendCommand | null {
   const m = rawText.match(PRIVATE_SEND_PATTERN);
