@@ -10,7 +10,9 @@ export type MissingSlot =
   | "missing_token"
   | "missing_recipient_count"
   | "ambiguous_target"
-  | "missing_requirement_threshold";
+  | "missing_requirement_threshold"
+  | "missing_description"
+  | "missing_counterparty";
 
 // Full, standalone question -- used verbatim when exactly one slot is
 // missing, so a single-slot follow-up still reads as a normal question
@@ -21,6 +23,8 @@ const CLARIFICATION_QUESTIONS: Record<MissingSlot, string> = {
   missing_recipient_count: "How many people should this go to?",
   ambiguous_target: "Who should receive this -- a hashtag, wallet, X account, or token holders?",
   missing_requirement_threshold: "What's the minimum -- likes, comments, or retweets -- for this giveaway?",
+  missing_description: "What's the work or deliverable this escrow is for?",
+  missing_counterparty: "Who's the other side of this escrow -- what's their @handle?",
 };
 
 // Short, lowercase, comma-joinable fragments -- used when two or more slots
@@ -32,6 +36,8 @@ const CLARIFICATION_FRAGMENTS: Record<MissingSlot, string> = {
   missing_recipient_count: "how many people this should go to",
   ambiguous_target: "who should receive it -- a hashtag, wallet, X account, or token holders",
   missing_requirement_threshold: "the minimum likes/comments/retweets needed",
+  missing_description: "what the work/deliverable is",
+  missing_counterparty: "who the other side is (their @handle)",
 };
 
 // A user gets at most ONE follow-up per request (confirmed 2026-07-20) --

@@ -1,6 +1,6 @@
 import { listNewMentions, listRecentDirectMessages, replyToMention, replyToDirectMessage, getUserByUsername } from "./botClient";
 import { getCursor, setCursor } from "./botCursor";
-import { parseCommand, parseSwapCommand, parseCauseCommand, parseDonateToName, parseEscrowCommand, parsePrivateSendCommand, isClaimCommand } from "./commandParser";
+import { parseCommand, parseSwapCommand, parseCauseCommand, parseDonateToName, parseEscrowCommand, parsePrivateSendCommand, isClaimCommand, type ParsedEscrowCommand } from "./commandParser";
 import { resolveTargetWallet } from "./targetResolver";
 import { buildUnsignedTransfer, buildUnsignedHashtagPayment, buildUnsignedDeposit } from "./txBuilder";
 import { getWalletByXUserId } from "./xAccountService";
@@ -306,11 +306,11 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
       return;
     }
 
-    // Neither deterministic parser matched -- try Groq for giveaway/airdrop
-    // (Wave 3/4). Same linked-sender gate as send/swap: an unlinked user's
-    // giveaway/airdrop request is silently ignored, not just because they
-    // can't fund it, but so a stranger can't burn a Groq call on this bot's
-    // behalf just by mentioning it.
+    // Neither deterministic parser matched -- try Groq for giveaway/airdrop/
+    // escrow. Same linked-sender gate as send/swap: an unlinked user's
+    // request is silently ignored, not just because they can't fund it, but
+    // so a stranger can't burn a Groq call on this bot's behalf just by
+    // mentioning it.
     const requesterWallet = await getWalletByXUserId(msg.authorId);
     if (!requesterWallet) {
       log.info("x_bot_message_ignored", { ...ctx, reason: "sender_not_linked" });
@@ -371,6 +371,18 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
         msg.authorId,
         msg.reply,
       );
+    } else if (intent.action === "escrow") {
+      // Same "create" shape parseEscrowCommand's regex would have produced --
+      // handleEscrowCommand doesn't know or care whether a command came from
+      // the strict regex or Groq's looser extraction.
+      const escrowCommand: ParsedEscrowCommand = {
+        action: "create",
+        description: intent.escrowDescription!,
+        amount: intent.amount!.toString(),
+        token: intent.token === "eth" ? "native" : "usdg",
+        counterpartyHandle: intent.escrowCounterpartyHandle!,
+      };
+      await handleEscrowCommand(escrowCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
     } else if (intent.airdropMode === "hold") {
       await handleHoldAirdrop(intent, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
     } else if (intent.airdropMode === "bullpost") {
