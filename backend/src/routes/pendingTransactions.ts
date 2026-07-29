@@ -10,6 +10,7 @@ import { createUnclaimedAllocation, markAllocationsClaimed } from "../services/x
 import { markPrivateSendSent, markPrivateSendClaimed } from "../services/x/privateSendService";
 import { getTransactionReceipt } from "../services/onchain/client";
 import { postReceiptReply } from "../services/x/receiptReply";
+import { postEscrowCreatedReply } from "../services/x/escrowHandler";
 import type { Hash } from "viem";
 import type { BotToken } from "../services/x/commandParser";
 
@@ -81,11 +82,19 @@ router.post("/transactions/pending/:id/broadcast", requireAuth, async (req: Auth
 
     // Only mention-triggered requests have a tweet_url (source_ref is that
     // tweet's own id in that case) -- DMs have no public tweet to reply to.
-    // Fired after the response, not awaited: the QR receipt is a courtesy,
-    // not something the client should wait on, and its failure must never
-    // turn an already-successful onchain settlement into an error response.
+    // Fired after the response, not awaited: the reply is a courtesy, not
+    // something the client should wait on, and its failure must never turn
+    // an already-successful onchain settlement into an error response.
     if (pending.tweet_url && pending.source_ref) {
-      void postReceiptReply(pending.source_ref, tx_hash);
+      // Escrow creation gets its own reply (announcing the real #id, tagging
+      // the counterparty) instead of the generic QR receipt -- the id doesn't
+      // exist until this exact receipt, so this is the only place it can be
+      // read from.
+      if (pending.kind === "escrow" && pending.target_type === "escrow_create") {
+        void postEscrowCreatedReply(pending.source_ref, receipt);
+      } else {
+        void postReceiptReply(pending.source_ref, tx_hash);
+      }
     }
   } catch (err) {
     next(err);

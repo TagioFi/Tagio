@@ -1,5 +1,6 @@
-import { getUserByUsername } from "./botClient";
-import { getWalletByXUserId } from "./xAccountService";
+import type { TransactionReceipt } from "viem";
+import { getUserByUsername, replyToMention } from "./botClient";
+import { getWalletByXUserId, getLinkedXAccountByWallet } from "./xAccountService";
 import {
   getEscrowDetails,
   buildUnsignedCreateEscrow,
@@ -7,10 +8,12 @@ import {
   buildUnsignedDeliver,
   buildUnsignedRelease,
   buildUnsignedCancelBeforeAccept,
+  decodeEscrowEvents,
 } from "./escrowService";
 import { createPendingEscrow } from "./pendingTransactionService";
 import { amountToBaseUnits } from "./txBuilder";
 import type { ParsedEscrowCommand } from "./commandParser";
+import { log } from "../../lib/logger";
 
 const REPLY_ESCROW_CREATED = "Escrow created. Tap the link in my bio to review and sign the creation in your dashboard.";
 const REPLY_ACCEPT_CREATED = "Acceptance created. Tap the link in my bio to review and sign it in your dashboard.";
@@ -27,6 +30,7 @@ export async function handleEscrowCommand(
   requesterXUserId: string,
   sourceRef: string,
   reply: (text: string) => Promise<void>,
+  tweetUrl?: string,
 ): Promise<void> {
   if (command.action === "create") {
     const target = await getUserByUsername(command.counterpartyHandle!).catch(() => null);
@@ -63,6 +67,7 @@ export async function handleEscrowCommand(
       amountBaseUnits: amountToBaseUnits(command.token!, command.amount!),
       approvals,
       primary: create,
+      tweetUrl,
     });
     if (created) await reply(REPLY_ESCROW_CREATED);
     return;
@@ -94,6 +99,7 @@ export async function handleEscrowCommand(
       amountBaseUnits: "0",
       approvals: [],
       primary: buildUnsignedAccept(command.escrowId!),
+      tweetUrl,
     });
     if (created) await reply(REPLY_ACCEPT_CREATED);
   } else if (command.action === "deliver") {
@@ -108,6 +114,7 @@ export async function handleEscrowCommand(
       amountBaseUnits: "0",
       approvals: [],
       primary: buildUnsignedDeliver(command.escrowId!, command.proofUrl!),
+      tweetUrl,
     });
     if (created) await reply(REPLY_DELIVER_CREATED);
   } else if (command.action === "release") {
@@ -122,6 +129,7 @@ export async function handleEscrowCommand(
       amountBaseUnits: "0",
       approvals: [],
       primary: buildUnsignedRelease(command.escrowId!),
+      tweetUrl,
     });
     if (created) await reply(REPLY_RELEASE_CREATED);
   } else if (command.action === "cancel") {
@@ -136,7 +144,35 @@ export async function handleEscrowCommand(
       amountBaseUnits: "0",
       approvals: [],
       primary: buildUnsignedCancelBeforeAccept(command.escrowId!),
+      tweetUrl,
     });
     if (created) await reply(REPLY_CANCEL_CREATED);
+  }
+}
+
+// Fired from routes/pendingTransactions.ts right after the create tx's own
+// receipt confirms success -- the escrow id doesn't exist until that moment,
+// so this is the earliest point the counterparty can be told which #id to
+// $accept. Only reachable for mention-originated creates (the route only
+// calls this when pending.tweet_url is set); a DM-originated create has no
+// public tweet to reply on, so the creator has to pass the id along
+// themselves once they see it in their own dashboard.
+export async function postEscrowCreatedReply(tweetId: string, receipt: TransactionReceipt): Promise<void> {
+  try {
+    const events = decodeEscrowEvents(receipt);
+    const created = events.find((e) => e.eventName === "EscrowCreated");
+    if (!created) {
+      log.error("x_bot_escrow_create_event_missing", { tweetId, txHash: receipt.transactionHash });
+      return;
+    }
+    const { escrowId, counterparty } = created.args;
+    const account = await getLinkedXAccountByWallet(counterparty);
+    const text = account
+      ? `@${account.xHandle} This escrow is live as #${escrowId}. Reply here with $accept #${escrowId} once you're ready to take the job.`
+      : `Escrow #${escrowId} is live. Reply here with $accept #${escrowId} once the counterparty is ready.`;
+    await replyToMention(tweetId, text);
+    log.info("x_bot_escrow_create_announced", { tweetId, escrowId: escrowId.toString() });
+  } catch (err) {
+    log.error("x_bot_escrow_create_announce_failed", { tweetId, error: err instanceof Error ? err.message : String(err) });
   }
 }

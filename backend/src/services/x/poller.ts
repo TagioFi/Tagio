@@ -297,7 +297,7 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
       } else if (donateToName) {
         await handleDonateToName(donateToName, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
       } else if (escrowCommand) {
-        await handleEscrowCommand(escrowCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+        await handleEscrowCommand(escrowCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply, msg.tweetUrl);
       } else if (privateSendCommand) {
         await handlePrivateSendCommand(privateSendCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
       } else {
@@ -382,7 +382,7 @@ async function handleMessage(msg: IncomingMessage): Promise<void> {
         token: intent.token === "eth" ? "native" : "usdg",
         counterpartyHandle: intent.escrowCounterpartyHandle!,
       };
-      await handleEscrowCommand(escrowCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
+      await handleEscrowCommand(escrowCommand, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply, msg.tweetUrl);
     } else if (intent.airdropMode === "hold") {
       await handleHoldAirdrop(intent, requesterWallet as `0x${string}`, msg.authorId, msg.id, msg.reply);
     } else if (intent.airdropMode === "bullpost") {

@@ -1,4 +1,4 @@
-import { encodeFunctionData, parseUnits } from "viem";
+import { encodeFunctionData, parseEventLogs, parseUnits, type TransactionReceipt } from "viem";
 import { config } from "../../config";
 import { getPublicClient } from "../onchain/client";
 import { simpleEscrowAbi, ESCROW_STATUS } from "../onchain/simpleEscrowAbi";
@@ -150,4 +150,11 @@ export const buildUnsignedRefundAfterDeliverDeadline = (escrowId: number) => bui
 export function buildUnsignedDeliver(escrowId: number, proofUrl: string): UnsignedTx {
   const data = encodeFunctionData({ abi: simpleEscrowAbi, functionName: "deliver", args: [BigInt(escrowId), proofUrl] });
   return { to: config.robinhood.simpleEscrowAddress, data, value: "0", chainId: config.robinhood.chainId };
+}
+
+// The create tx's own receipt already has this event on it (no separate
+// on-chain read needed) -- used right after confirmation to announce the
+// real escrow id, since it doesn't exist until the tx is mined.
+export function decodeEscrowEvents(receipt: TransactionReceipt) {
+  return parseEventLogs({ abi: simpleEscrowAbi, logs: receipt.logs });
 }
