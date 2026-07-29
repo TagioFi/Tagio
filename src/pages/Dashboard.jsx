@@ -5,7 +5,7 @@ import { useAccount } from 'wagmi'
 import { getAccount } from 'wagmi/actions'
 import { formatUnits } from 'viem'
 import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend, getWalletIdentity, isSessionExpiredError, SESSION_EXPIRED_MESSAGE } from '../lib/tagio'
-import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, signAndConfirmSwapPlan, signAndConfirmSteps, createCauseOnchain, donateToCauseOnchain, withdrawFromCauseOnchain, createEscrowOnchain, acceptEscrowOnchain, cancelEscrowOnchain, deliverEscrowOnchain, releaseEscrowOnchain, forceReleaseEscrowOnchain, refundEscrowOnchain, friendlyError } from '../lib/resolver-actions'
+import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signAndConfirmSwapPlan, signAndConfirmSteps, createCauseOnchain, donateToCauseOnchain, withdrawFromCauseOnchain, createEscrowOnchain, acceptEscrowOnchain, cancelEscrowOnchain, deliverEscrowOnchain, releaseEscrowOnchain, forceReleaseEscrowOnchain, refundEscrowOnchain, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
 import { signInWithWallet, getAuthToken, getLiveAuthToken, clearAuthToken } from '../lib/auth'
@@ -1557,11 +1557,19 @@ export default function Dashboard() {
     setPendingBusyId(row.id)
     try {
       const primary = { to: row.unsigned_to, data: row.unsigned_data, value: row.unsigned_value }
+      // Any kind can carry a non-empty `approvals` array (escrow and cause
+      // donations need one for a USDG amount, same as a swap does) -- only
+      // 'swap' and 'disperse' were ever routed through the approvals-then-
+      // primary sequence, so every other kind silently skipped its own
+      // approval and went straight to the primary call. That call's internal
+      // transferFrom then reverted for lack of allowance (confirmed live
+      // 2026-07-29: a USDG escrow creation failed with "transaction reverted"
+      // in Rainbow's simulation for exactly this reason). signAndConfirmSteps
+      // degrades to "just send primary" when approvals/extra_steps are both
+      // empty, so it's safe as the universal non-swap path.
       const hash = row.kind === 'swap'
         ? await signAndConfirmSwapPlan({ approvals: row.approvals || [], swap: primary })
-        : row.kind === 'disperse'
-          ? await signAndConfirmSteps([...(row.approvals || []), primary, ...(row.extra_steps || [])])
-          : await signPendingTransaction(primary)
+        : await signAndConfirmSteps([...(row.approvals || []), primary, ...(row.extra_steps || [])])
       await broadcastPendingTransaction({ data: { token, id: row.id, txHash: hash } })
       toast(`Sent · pending request #${row.id} settled onchain`)
       refreshPending()
