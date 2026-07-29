@@ -107,7 +107,7 @@ export async function handleGiveawayIntent(
   const requirementType = intent.requirementType as RequirementType;
   const threshold = intent.requirementThreshold ?? 1;
 
-  const check = await checkRequirement(sourcePostId, requirementType, threshold);
+  const check = await checkRequirement(sourcePostId, requirementType, threshold, intent.winnerCount);
   if (check.qualifies) {
     const winners = pickRandomWinners(check.candidates, intent.winnerCount);
     const created = await payOutWinners(
@@ -154,6 +154,7 @@ export async function checkWaitingGiveaways(): Promise<void> {
         request.source_post_id,
         request.requirement_type as RequirementType,
         request.requirement_threshold,
+        request.winner_count,
       );
       if (!check.qualifies) continue;
 

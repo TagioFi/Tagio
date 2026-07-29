@@ -20,16 +20,23 @@ async function getCandidatePool(targetPostId: string, requirementType: Requireme
   }
 }
 
-// Qualifies once the pool reaches `threshold` -- resolving winners (random
-// sample of N) is the caller's job, this only answers "is there enough of a
-// pool to draw from yet."
+// Qualifies once the pool reaches `threshold` AND has enough people to
+// actually fill `winnerCount` distinct winner slots -- threshold alone isn't
+// enough: it defaults to 1 whenever the requester didn't state a specific
+// number (see intentParser.ts), which is unrelated to how many winners they
+// asked for. Without the winnerCount floor, "send to any 2 people who
+// retweeted this" could fulfill the instant a single retweet landed, paying
+// out the whole amount to just that one person instead of waiting for a
+// second (confirmed live 2026-07-29 on tagio: a 2-winner retweet giveaway
+// paid its entire amount to one winner as soon as the first retweet arrived).
 export async function checkRequirement(
   targetPostId: string,
   requirementType: RequirementType,
   threshold: number,
+  winnerCount: number,
 ): Promise<RequirementCheck> {
   const candidates = await getCandidatePool(targetPostId, requirementType);
-  return { qualifies: candidates.length >= threshold, candidates };
+  return { qualifies: candidates.length >= Math.max(threshold, winnerCount), candidates };
 }
 
 // Fisher-Yates partial shuffle -- picks `count` distinct winners from the
