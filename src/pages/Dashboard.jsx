@@ -4,11 +4,11 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
 import { getAccount } from 'wagmi/actions'
 import { formatUnits } from 'viem'
-import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend, getWalletIdentity } from '../lib/tagio'
+import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend, getWalletIdentity, isSessionExpiredError, SESSION_EXPIRED_MESSAGE } from '../lib/tagio'
 import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signPendingTransaction, signAndConfirmSwapPlan, signAndConfirmSteps, createCauseOnchain, donateToCauseOnchain, withdrawFromCauseOnchain, createEscrowOnchain, acceptEscrowOnchain, cancelEscrowOnchain, deliverEscrowOnchain, releaseEscrowOnchain, forceReleaseEscrowOnchain, refundEscrowOnchain, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
-import { signInWithWallet, getAuthToken } from '../lib/auth'
+import { signInWithWallet, getAuthToken, getLiveAuthToken, clearAuthToken } from '../lib/auth'
 
 // Served straight from /public -- no bundler import needed. COIN has no
 // icon yet; callers fall back to the plain "#" glyph for it.
@@ -1290,7 +1290,13 @@ function PendingRowLabel({ row }) {
   )
 }
 
-function Pending({ rows, loading, busyId, sign, dismiss }) {
+// `error` is deliberately rendered *before* the empty state and never folded
+// into it: a failed fetch resolves to zero rows here, and showing "no pending
+// requests yet" for that told users their signature wasn't needed when it was.
+// Same class of bug as the case-sensitive wallet match fixed backend-side --
+// zero rows must never be reported as "nothing to do" unless the server
+// actually said so.
+function Pending({ rows, loading, error, onRetry, busyId, sign, dismiss }) {
   return (
     <div className="fade-in">
       <div className="card pad-lg claim" style={{ marginBottom: '1rem' }}>
@@ -1303,10 +1309,27 @@ function Pending({ rows, loading, busyId, sign, dismiss }) {
       </div>
       {loading ? (
         <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>Loading pending requests…</p></div>
+      ) : error && rows.length === 0 ? (
+        <div className="card pad-lg">
+          <div className="status bad">{I.x} {error}</div>
+          <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', margin: '0.6rem 0 0.9rem', lineHeight: 1.5 }}>
+            Couldn't load your pending requests — this is a loading problem, not an empty list.
+            Anything waiting on your signature is still there.
+          </p>
+          <button className="btn sm" onClick={onRetry}>Try again</button>
+        </div>
       ) : rows.length === 0 ? (
         <div className="card pad-lg"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>No pending requests yet — send the bot a mention or DM to create one.</p></div>
       ) : (
         <div className="card pad-lg">
+          {/* A failed *poll* keeps the last good rows (react-query retains data on
+              error), so they stay listed and the staleness is called out inline
+              rather than replacing them with an error card. */}
+          {error && (
+            <div className="status bad" style={{ marginBottom: '0.75rem' }}>
+              {I.x} Couldn't refresh just now — this list may be out of date. <button className="btn ghost sm" style={{ marginLeft: '0.5rem' }} onClick={onRetry}>Retry</button>
+            </div>
+          )}
           {rows.map((row) => (
             <div key={row.id} className="act-row" style={{ gridTemplateColumns: '2rem 1fr auto', alignItems: 'center' }}>
               <span className="act-ic in">{I.clock}</span>
@@ -1419,14 +1442,19 @@ export default function Dashboard() {
   // the wallet-signature prompt and the backend round-trip. 'redirecting' is
   // the brief window before the browser navigates to X. Skips straight to
   // 'signed_in' if a valid-looking token is already stored, so this doesn't
-  // re-run every visit.
-  const [authStatus, setAuthStatus] = useState(() => (getAuthToken() ? 'signed_in' : 'idle'))
+  // re-run every visit. "Valid-looking" means unexpired, not merely present:
+  // trusting presence alone left the dashboard sitting on a dead 7-day JWT,
+  // rendering as signed-in while every authed request 401'd (which the Pending
+  // tab then showed as an empty list).
+  const [authStatus, setAuthStatus] = useState(() => (getLiveAuthToken() ? 'signed_in' : 'idle'))
   const [authError, setAuthError] = useState('')
   const [authAttempt, setAuthAttempt] = useState(0)
 
   useEffect(() => {
     if (!address) { setAuthStatus('idle'); return }
-    if (getAuthToken()) { setAuthStatus('signed_in'); return }
+    // getLiveAuthToken (not getAuthToken) so an expired token falls through to a
+    // fresh sign-in here instead of short-circuiting into 'signed_in'.
+    if (getLiveAuthToken()) { setAuthStatus('signed_in'); return }
 
     let cancelled = false
     setAuthStatus('checking')
@@ -1478,10 +1506,15 @@ export default function Dashboard() {
   const pendingQuery = useQuery({
     queryKey: ['pending-transactions', address],
     enabled: Boolean(address) && authStatus === 'signed_in',
-    queryFn: () => getPendingTransactions({ data: { token: getAuthToken() } }),
+    queryFn: () => getPendingTransactions({ data: { token: getLiveAuthToken() } }),
     refetchInterval: 20000,
   })
   const pendingRows = pendingQuery.data || []
+  // On error `data` is undefined, so pendingRows is [] -- indistinguishable from
+  // a genuinely empty list unless the failure is carried separately. This is the
+  // one place that distinction is made; everything downstream (tab, badge,
+  // nudge, notification) reads pendingRows.
+  const pendingError = pendingQuery.isError ? friendlyError(pendingQuery.error) : ''
   const [pendingBusyId, setPendingBusyId] = useState(null)
   // Dismissing the modal only needs to hide it for the requests it was
   // actually shown for -- tracked by id, not a single blanket flag, so a
@@ -1497,8 +1530,30 @@ export default function Dashboard() {
   const dismissPendingModal = () => setDismissedPendingIds((prev) => new Set([...prev, ...pendingRows.map((r) => r.id)]))
   const refreshPending = () => queryClient.invalidateQueries({ queryKey: ['pending-transactions'] })
 
+  // A 401 means the session is over, not that there's nothing to show. Drop the
+  // dead token and re-run sign-in so the user gets the AuthGate rather than a
+  // Pending tab that quietly reports zero requests forever (the old behaviour:
+  // authStatus stayed 'signed_in' off a stale token, so nothing ever recovered
+  // and nothing ever cleared it). Capped at one automatic retry per mount -- if
+  // a freshly-minted token also 401s, that's a backend/secret problem and
+  // re-prompting the wallet on a loop would only make it worse, so it surfaces
+  // as an error with a manual "Try again" instead.
+  const sessionRecoveredRef = useRef(false)
+  useEffect(() => {
+    if (!pendingQuery.isError || !isSessionExpiredError(pendingQuery.error)) return
+    clearAuthToken()
+    if (sessionRecoveredRef.current) {
+      setAuthStatus('error')
+      setAuthError(SESSION_EXPIRED_MESSAGE)
+      return
+    }
+    sessionRecoveredRef.current = true
+    setAuthStatus('idle')
+    setAuthAttempt((n) => n + 1)
+  }, [pendingQuery.isError, pendingQuery.error])
+
   const signPending = async (row) => {
-    const token = getAuthToken()
+    const token = getLiveAuthToken()
     setPendingBusyId(row.id)
     try {
       const primary = { to: row.unsigned_to, data: row.unsigned_data, value: row.unsigned_value }
@@ -1518,7 +1573,7 @@ export default function Dashboard() {
   }
 
   const dismissPending = async (row) => {
-    const token = getAuthToken()
+    const token = getLiveAuthToken()
     setPendingBusyId(row.id)
     try {
       await cancelPendingTransaction({ data: { token, id: row.id } })
@@ -1645,7 +1700,11 @@ export default function Dashboard() {
                   : <div className="card pad-lg fade-in"><p style={{ fontSize: '0.9rem', color: 'var(--ink-faint)' }}>{handlesQuery.isLoading ? 'Loading your handles…' : 'No handles to configure yet — claim one first.'}</p></div>)}
                 {view === 'send' && <Send toast={toast} />}
                 {view === 'trade' && <Trade toast={toast} />}
-                {view === 'pending' && <Pending rows={pendingRows} loading={pendingQuery.isLoading} busyId={pendingBusyId} sign={signPending} dismiss={dismissPending} />}
+                {/* isPending, not isLoading: a *disabled* query (auth still in flight) has
+                    isLoading === false in react-query v5, which rendered the "nothing
+                    pending" copy for a fetch that had never actually run. isPending stays
+                    true until the query genuinely resolves. */}
+                {view === 'pending' && <Pending rows={pendingRows} loading={pendingQuery.isPending} error={pendingError} onRetry={refreshPending} busyId={pendingBusyId} sign={signPending} dismiss={dismissPending} />}
                 {view === 'causes' && <Causes toast={toast} />}
                 {view === 'escrow' && <Escrow toast={toast} />}
                 {view === 'psend' && <PrivateSend toast={toast} />}
