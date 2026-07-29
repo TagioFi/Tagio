@@ -47,8 +47,8 @@ export default function XCommandsList() {
         </Section>
 
         <Section eyebrow="Core" title="Giveaway">
-          <Cmd>{`send 0.0005 eth to any random 20 users who liked this\ngiveaway 50 usdg to 10 random people who commented`}</Cmd>
-          <P>Pick random winners from the people who liked, commented on, or retweeted a post. Everyone gets paid in one go once the giveaway's conditions are met.</P>
+          <Cmd>{`send 0.0005 eth to any random 20 users who retweeted this\ngiveaway 50 usdg to 10 random people who commented`}</Cmd>
+          <P>Pick random winners from the people who retweeted, commented on, or liked a post. Everyone gets paid in one go once the giveaway's conditions are met. For the most reliable results right now, ask for retweets or comments rather than likes.</P>
         </Section>
 
         <Section eyebrow="Core" title="Airdrop">
