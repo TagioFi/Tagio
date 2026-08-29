@@ -79,23 +79,23 @@ sequenceDiagram
     autonumber
     actor User as Solana User
     participant App as Tagio Frontend
-    participant API as Backend API (api.tagiopay.com)
-    participant X as Twitter / X OAuth
+    participant API as Backend API
+    participant X as Twitter X OAuth
 
-    User->>App: Connects Phantom / Solflare
-    App->>User: Prompts ed25519 Message Signature
-    User->>App: Signs Message
-    App->>API: POST /auth/signin { walletAddress, signature, message }
+    User->>App: Connects Phantom or Solflare
+    App->>User: Prompts ed25519 signature
+    User->>App: Signs message
+    App->>API: POST /auth/signin
     alt Wallet already linked to X
-        API-->>App: { token: "<jwt>", xLinked: true, xHandle: "alice" }
-        App->>App: Store JWT in localStorage -> Open Dashboard
-    else New User / Unlinked Wallet
-        API-->>App: { needsXLink: true, authorizeUrl: "https://twitter.com/i/oauth2/..." }
-        App->>X: Redirects window.location to authorizeUrl
-        X->>API: User approves -> X redirects to /auth/x/callback
-        API->>API: Links solana_wallet_address to X user
-        API-->>App: Redirects to /auth/callback#token=<jwt>
-        App->>App: Reads token from fragment -> Store JWT -> Open Dashboard
+        API-->>App: Return JWT and xHandle
+        App->>App: Store JWT in localStorage
+    else New User or Unlinked Wallet
+        API-->>App: Return authorizeUrl
+        App->>X: Redirect to X OAuth
+        X->>API: User approves and returns callback
+        API->>API: Bind wallet to X account
+        API-->>App: Redirect to /auth/callback#token=JWT
+        App->>App: Store JWT in localStorage
     end
 ```
 

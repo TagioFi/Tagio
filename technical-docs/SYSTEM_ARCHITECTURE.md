@@ -8,30 +8,30 @@ TagioPay replaces cumbersome base58 / hex wallet addresses with human-readable `
 
 ```mermaid
 graph TD
-    User([Solana User / Phantom Wallet]) -->|Transacts with SOL or USDC| FE[TagioPay Frontend]
+    User["Solana User / Phantom Wallet"] -->|Transacts with SOL or USDC| FE["TagioPay Frontend"]
     
-    subgraph Solana Native Layer
-        FE -->|Direct Transfer / Send| SOL_W[Recipient Solana Wallet]
-        FE -->|Trade xStocks: AAPLx, TSLAx| JUP[Solana DEX / Jupiter Aggregator]
+    subgraph Solana_Native_Layer["Solana Native Layer"]
+        FE -->|Direct Transfer / Send| SOL_W["Recipient Solana Wallet"]
+        FE -->|Trade xStocks: AAPLx, TSLAx| JUP["Solana DEX / Jupiter Aggregator"]
     end
 
-    subgraph Cross-Chain Intent Layer
-        FE -->|Hashtag Splits / Escrows / Causes| Relay[Relay.link API: 0.15% Protocol Fee]
-        Relay -->|Fronts Gas & Executes Calldata| RH_Contracts[Robinhood Chain Smart Contracts]
+    subgraph Cross_Chain_Intent_Layer["Cross-Chain Intent Layer"]
+        FE -->|Hashtag Splits / Escrows / Causes| Relay["Relay.link API: 0.15% Protocol Fee"]
+        Relay -->|Fronts Gas & Executes Calldata| RH_Contracts["Robinhood Chain Smart Contracts"]
     end
 
-    subgraph Robinhood Settlement Layer
-        RH_Contracts --> Resolver[HashtagResolver.sol]
-        RH_Contracts --> NFT[HashtagNFT.sol]
-        RH_Contracts --> Escrow[SimpleEscrow.sol / ClaimEscrow.sol]
-        RH_Contracts --> Causes[CauseRegistry.sol]
-        RH_Contracts --> PrivatePool[PrivateSendPool.sol]
+    subgraph Robinhood_Settlement_Layer["Robinhood Settlement Layer"]
+        RH_Contracts --> Resolver["HashtagResolver.sol"]
+        RH_Contracts --> NFT["HashtagNFT.sol"]
+        RH_Contracts --> Escrow["SimpleEscrow.sol / ClaimEscrow.sol"]
+        RH_Contracts --> Causes["CauseRegistry.sol"]
+        RH_Contracts --> PrivatePool["PrivateSendPool.sol"]
     end
 
-    RH_Contracts -.->|Onchain Events| Sync[Backend Event Sync Service]
-    Sync --> DB[(PostgreSQL Database)]
-    DB --> Redis[(Redis Cache: <50ms)]
-    Redis --> API[Fast Resolution API: /hashtags/resolve]
+    RH_Contracts -.->|Onchain Events| Sync["Backend Event Sync Service"]
+    Sync --> DB[("PostgreSQL Database")]
+    DB --> Redis[("Redis Cache: <50ms")]
+    Redis --> API["Fast Resolution API: /hashtags/resolve"]
 ```
 
 ---
