@@ -15,6 +15,18 @@
 
 ---
 
+## 2. API Endpoints & Base URLs
+
+* **Production API URL**: `https://api.tagiopay.com`
+* **Local Development API URL**: `http://localhost:3001`
+
+All requests requiring authentication accept the header:
+```http
+Authorization: Bearer <JWT_TOKEN>
+```
+
+---
+
 ## 2. Architecture & Execution Matrix
 
 ```
@@ -64,7 +76,7 @@ const encoded = new TextEncoder().encode(SIGNIN_MESSAGE);
 const signatureBytes = await signMessage(encoded);
 const signature = bs58.encode(signatureBytes);
 
-const res = await fetch("http://localhost:3001/auth/signin", {
+const res = await fetch("https://api.tagiopay.com/auth/signin", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
@@ -90,7 +102,7 @@ For any operation that interacts with smart contracts (Hashtags, Splits, Escrows
 
 ### 1. Request Quote & Solana Instructions (`POST /relay/quote`)
 ```typescript
-const quote = await fetch("http://localhost:3001/relay/quote", {
+const quote = await fetch("https://api.tagiopay.com/relay/quote", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
