@@ -1,16 +1,9 @@
-import { ConnectButton } from "@rainbow-me/rainbowkit";
-import { formatUnits } from "viem";
-import { useBalance } from "wagmi";
-import { robinhoodChain } from "../lib/chain";
+import { useEffect, useState } from "react";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import { useWalletModal } from "@solana/wallet-adapter-react-ui";
+import { LAMPORTS_PER_SOL } from "@solana/web3.js";
 
-const short = (a: string | undefined) => (a ? a.slice(0, 6) + "…" + a.slice(-4) : "");
-
-export const formatBalance = (b: { value: bigint; decimals: number } | undefined) =>
-  b
-    ? Number(formatUnits(b.value, b.decimals)).toLocaleString("en-US", {
-        maximumFractionDigits: 5,
-      })
-    : "—";
+const short = (a: string | undefined) => (a ? a.slice(0, 4) + "…" + a.slice(-4) : "");
 
 const walletIcon = (
   <svg
@@ -26,84 +19,100 @@ const walletIcon = (
   </svg>
 );
 
-function ChipBalance({ address }: { address: `0x${string}` }) {
-  const { data: balance } = useBalance({ address, chainId: robinhoodChain.id });
+function SolanaChipBalance() {
+  const { publicKey } = useWallet();
+  const { connection } = useConnection();
+  const [balance, setBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!publicKey) {
+      setBalance(null);
+      return;
+    }
+    let live = true;
+    connection.getBalance(publicKey).then((lamports) => {
+      if (live) setBalance(lamports / LAMPORTS_PER_SOL);
+    }).catch(() => {
+      if (live) setBalance(null);
+    });
+    return () => {
+      live = false;
+    };
+  }, [publicKey, connection]);
+
   return (
     <div className="bal">
-      {formatBalance(balance)} <small>ETH</small>
+      {balance !== null ? balance.toLocaleString("en-US", { maximumFractionDigits: 4 }) : "—"} <small>SOL</small>
     </div>
   );
 }
 
 /**
- * Wallet connect/disconnect control backed by RainbowKit. `chip` is the dark
- * sidebar variant, `button` a pill button for topbars.
+ * Wallet connect/disconnect control backed by Solana Wallet Adapter.
+ * `chip` is the dark sidebar variant, `button` a pill button for topbars.
  */
 export function WalletControl({ variant = "button" }: { variant?: "button" | "chip" }) {
-  return (
-    <ConnectButton.Custom>
-      {({ account, chain, openConnectModal, openAccountModal, openChainModal, mounted }) => {
-        const connected = mounted && account && chain;
-        const wrongNetwork = connected && chain.unsupported;
-        const onClick = !connected
-          ? openConnectModal
-          : wrongNetwork
-            ? openChainModal
-            : openAccountModal;
+  const { publicKey, connected, disconnect, connecting } = useWallet();
+  const { setVisible } = useWalletModal();
 
-        if (variant === "chip") {
-          if (!connected || wrongNetwork) {
-            return (
-              <button
-                className="wallet-chip"
-                onClick={onClick}
-                disabled={!mounted}
-                style={{ width: "100%", textAlign: "left", cursor: "pointer" }}
-              >
-                <div className="addr">
-                  {walletIcon}
-                  {wrongNetwork ? "Wrong network" : "Connect wallet"}
-                </div>
-              </button>
-            );
-          }
-          return (
-            <div className="wallet-chip">
-              <div className="addr">
-                {walletIcon}
-                {short(account.address)}
-                <button
-                  onClick={openAccountModal}
-                  style={{
-                    marginLeft: "auto",
-                    fontSize: "0.7rem",
-                    color: "rgba(255,255,255,0.55)",
-                    textDecoration: "underline",
-                  }}
-                >
-                  manage
-                </button>
-              </div>
-              <ChipBalance address={account.address as `0x${string}`} />
-            </div>
-          );
-        }
+  const handleAction = () => {
+    if (!connected) {
+      setVisible(true);
+    } else {
+      disconnect();
+    }
+  };
 
-        return (
+  const address = publicKey?.toBase58();
+
+  if (variant === "chip") {
+    if (!connected || !address) {
+      return (
+        <button
+          className="wallet-chip"
+          onClick={handleAction}
+          style={{ width: "100%", textAlign: "left", cursor: "pointer" }}
+        >
+          <div className="addr">
+            {walletIcon}
+            {connecting ? "Connecting…" : "Connect Solana"}
+          </div>
+        </button>
+      );
+    }
+
+    return (
+      <div className="wallet-chip">
+        <div className="addr">
+          {walletIcon}
+          {short(address)}
           <button
-            className="btn ghost sm"
-            onClick={onClick}
-            disabled={!mounted}
-            title={connected ? "Wallet options" : undefined}
+            onClick={() => disconnect()}
+            style={{
+              marginLeft: "auto",
+              fontSize: "0.7rem",
+              color: "rgba(255,255,255,0.55)",
+              textDecoration: "underline",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+            }}
           >
-            {!connected
-              ? "Connect wallet"
-              : wrongNetwork
-                ? "Wrong network"
-                : short(account.address)}
+            disconnect
           </button>
-        );
-      }}
-    </ConnectButton.Custom>
+        </div>
+        <SolanaChipBalance />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      className="btn ghost sm"
+      onClick={handleAction}
+      title={connected ? "Disconnect wallet" : undefined}
+    >
+      {!connected ? (connecting ? "Connecting…" : "Connect Solana") : short(address)}
+    </button>
   );
 }

@@ -12,6 +12,7 @@ export const config = {
     nftAddress: (process.env.ROBINHOOD_NFT_ADDRESS ?? "") as `0x${string}`,
     settlementTokenAddress: (process.env.ROBINHOOD_SETTLEMENT_TOKEN_ADDRESS ?? "") as `0x${string}`,
     usdgAddress: (process.env.ROBINHOOD_USDG_ADDRESS ?? "") as `0x${string}`,
+    feeWallet: (process.env.ROBINHOOD_FEE_WALLET ?? "0x0000000000000000000000000000000000000000") as `0x${string}`,
     // Mainnet Blockscout instance -- confirmed via docs.robinhood.com/chain/connecting
     // (2026-07-20; that page's "Mainnet" column also matches ROBINHOOD_RPC_URL's
     // default above, confirming it's the right column, not the testnet one).
@@ -59,6 +60,10 @@ export const config = {
   redisUrl: process.env.REDIS_URL ?? "",
 
   jwtAccessSecret: process.env.JWT_ACCESS_SECRET ?? "",
+
+  relay: {
+    apiKey: process.env.RELAY_API_KEY ?? "edcabeb0-41ed-4827-9d8a-976280cfc0b7",
+  },
 
   groq: {
     // Intent parsing only for giveaway/airdrop free-text -- never reply

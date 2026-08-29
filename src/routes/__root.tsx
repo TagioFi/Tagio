@@ -126,22 +126,26 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
+import { SolanaAppWalletProvider } from "../lib/solana";
+
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
-    <WagmiProvider config={wagmiConfig}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider
-          theme={darkTheme({
-            accentColor: "#c8e860",
-            accentColorForeground: "#04170d",
-          })}
-        >
-          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-          <Outlet />
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <SolanaAppWalletProvider>
+      <WagmiProvider config={wagmiConfig}>
+        <QueryClientProvider client={queryClient}>
+          <RainbowKitProvider
+            theme={darkTheme({
+              accentColor: "#c8e860",
+              accentColorForeground: "#04170d",
+            })}
+          >
+            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+            <Outlet />
+          </RainbowKitProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </SolanaAppWalletProvider>
   );
 }

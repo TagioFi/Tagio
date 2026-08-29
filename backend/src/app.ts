@@ -13,6 +13,7 @@ import escrowRoutes from "./routes/escrows";
 import privateSendRoutes from "./routes/privateSends";
 import authRoutes from "./routes/auth";
 import xAuthCallbackRoutes from "./routes/xAuthCallback";
+import relayRoutes from "./routes/relay";
 import { errorHandler } from "./middleware/errorHandler";
 import { requestLogger } from "./middleware/requestLogger";
 
@@ -34,5 +35,6 @@ app.use(escrowRoutes);
 app.use(privateSendRoutes);
 app.use(authRoutes);
 app.use(xAuthCallbackRoutes);
+app.use(relayRoutes);
 
 app.use(errorHandler);

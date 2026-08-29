@@ -461,3 +461,33 @@ export const claimPrivateSend = createServerFn({ method: "POST" })
     });
     return (await res.json()) as { created: boolean };
   });
+
+/* ---------- relay.link cross-chain intent endpoints ---------- */
+
+export interface RelayQuoteRequest {
+  user: string;
+  originCurrency: string;
+  destinationCurrency?: string;
+  amount: string;
+  recipient?: string;
+  txs?: Array<{ to: `0x${string}`; data: `0x${string}`; value: string }>;
+}
+
+export const getRelayQuote = createServerFn({ method: "POST" })
+  .validator((input: RelayQuoteRequest) => input)
+  .handler(async ({ data }): Promise<any> => {
+    const res = await apiFetch("/relay/quote", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    return await res.json();
+  });
+
+export const getRelayIntentStatus = createServerFn({ method: "GET" })
+  .validator((requestId: string) => requestId)
+  .handler(async ({ data: requestId }): Promise<any> => {
+    const res = await apiFetch(`/relay/intent/${encodeURIComponent(requestId)}`);
+    return await res.json();
+  });
+
