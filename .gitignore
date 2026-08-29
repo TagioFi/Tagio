@@ -22,6 +22,7 @@ dist-ssr
 .vinxi
 .tanstack/**
 .nitro
+.vercel/
 *.local
 bun.lockb
 tsconfig.tsbuildinfo
