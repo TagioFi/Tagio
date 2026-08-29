@@ -1,20 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
-import Home from "../pages/Home.jsx";
 
 export const Route = createFileRoute("/")({
-  head: () => ({
-    meta: [
-      { title: "Tagio — Send money to a name, not an address" },
-      { name: "description", content: "Claim your #handle on Robinhood Chain. Payments resolve, split, and settle in about 100ms." },
-      { property: "og:title", content: "Tagio — Send money to a name, not an address" },
-      { property: "og:description", content: "Claim your #handle on Robinhood Chain. Payments resolve, split, and settle in about 100ms." },
-      { property: "og:image", content: "/og.jpg" },
-      { name: "twitter:image", content: "/og.jpg" },
-    ],
-  }),
-  component: Index,
+  component: HomeComponent,
 });
 
-function Index() {
-  return <Home />;
+function HomeComponent() {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "#04170d",
+        color: "#c8e860",
+        fontFamily: "system-ui, -apple-system, sans-serif",
+      }}
+    >
+      <h1 style={{ fontSize: "2.5rem", fontWeight: "bold", margin: 0 }}>
+        hello world Tagio
+      </h1>
+      <p style={{ color: "#a1a1aa", marginTop: "0.5rem" }}>
+        Executed on Solana · Settled on Robinhood
+      </p>
+    </div>
+  );
 }

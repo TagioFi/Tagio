@@ -1,233 +1,177 @@
 # TagioPay Frontend Integration Guide
 
-Internal document for the frontend developer. Not required reading for backend/contracts work.
+> **Core Philosophy**: **"Executed on Solana, Settled on Robinhood"**
+>
+> Users interact entirely on **Solana** using Solana wallets (**Phantom**, **Solflare**, **Backpack**) with **SOL** and **USDC**. Complex onchain logic (hashtag registry NFTs, multi-wallet fan-out splits, escrows, causes, shielded private pool) is settled seamlessly on Robinhood Chain via **Relay.link** cross-chain intent solvers.
 
 ---
 
-## Repo layout
+## 1. Product Positioning & Terminology
 
-Monorepo. Here's what lives where:
-
-```
-/                        ← Vite + TanStack Start frontend (your domain)
-  src/routes/            ← TanStack Router routes (__root.tsx, index.tsx, dashboard.tsx)
-  src/pages/             ← page-level components
-  src/components/ui/     ← shadcn UI components
-  src/lib/utils.ts       ← cn() utility
-  src/server.ts          ← SSR entry (TanStack Start)
-  .env / .env.example    ← frontend env vars (VITE_API_URL)
-
-/backend/                ← Bun + Express API (NOT yours — do not touch)
-  src/routes/            ← hashtags, resolve, transactions, auth, health
-  src/services/onchain/  ← viem client + resolver ABI
-  db/migrations/         ← Postgres schema
-
-/contracts/              ← Foundry (Solidity) — NOT yours
-  src/HashtagResolver.sol
-  src/HashtagNFT.sol
-```
-
-> This frontend was merged in from what used to be a separate repo
-> (`tik-maker5/tagio`, built via Lovable). That repo still exists and is still
-> connected to Lovable — if you keep developing through Lovable, point it at
-> **this** repo (`tagiopay`) instead, or changes will land in the old repo and
-> need to be re-merged by hand. `.lovable/project.json` and `AGENTS.md` came
-> across as-is; update `.lovable/project.json` if you reconnect Lovable here.
+* **Surface**: Solana (Fast confirmations, low fees, standard Solana wallet adapters).
+* **Working Currencies**: Strictly **`SOL`** (9 decimals) and **`USDC`** (6 decimals).
+* **Tokenized Stocks (xStocks)**: 714+ 1:1 asset-backed US equities & ETFs (Apple, Tesla, NVIDIA, Google, S&P 500) trading natively as Solana SPL tokens (see [`backend/src/lib/rwaTokens.ts`](file:///home/skipp/Documents/gigs/qpay/tagiopay/backend/src/lib/rwaTokens.ts)).
+* **Branding Guideline**: Position TagioPay as an ultra-fast Solana product. Subtly communicate that programmable splits and identity registries settle securely on Robinhood Chain in the background.
 
 ---
 
-## Backend URL
+## 2. Architecture & Execution Matrix
 
-**Live:**
 ```
-VITE_API_URL=https://api.tagiopay.com
+┌────────────────────────────────────────────────────────────────────────┐
+│                        TAGIOPAY FRONTEND (SOLANA)                      │
+└───────────────────┬────────────────────────────────┬───────────────────┘
+                    │                                │
+      Direct Send & xStocks Swaps          Contract Calls (Splits/Escrows)
+                    │                                │
+                    ▼                                ▼
+       ┌────────────────────────┐       ┌────────────────────────┐
+       │   Solana Native/SPL    │       │ Relay.link (0.15% Fee) │
+       │ (SystemProgram / DEX)  │       │     /relay/quote       │
+       └────────────────────────┘       └────────────┬───────────┘
+                                                     │
+                                                     ▼
+                                        ┌────────────────────────┐
+                                        │ Robinhood Chain L2     │
+                                        │ Smart Contracts        │
+                                        └────────────────────────┘
 ```
-For local frontend dev against the live backend, use this same value — there's no
-separate staging backend right now. `http://localhost:3001` still works if you're
-also running the backend locally (`cd backend && bun dev`, needs its own `.env`).
+
+| Action | Execution Method | Currency / Asset | Routing Details |
+| :--- | :--- | :--- | :--- |
+| **Direct Send** | Solana Transfer | SOL / USDC | Direct Solana transaction to recipient's base58 address. No bridge/Relay. |
+| **Trade Stocks** | Solana DEX (Jupiter) | SOL/USDC ↔ `AAPLx`, `TSLAx`, etc. | Direct Solana SPL swap to the xStock mint. No cross-chain bridge. |
+| **Hashtag Send (`#handle`)** | Relay.link Quote | SOL / USDC | Routes to Robinhood `HashtagResolver.receivePayment()` with **0.15% fee** for onchain multi-split payouts. |
+| **Register / Renew Handle** | Relay.link Quote | SOL / USDC | Routes to `HashtagResolver.registerHashtag()` / `renewSubscription()` with **0.15% fee**; mints `HashtagNFT`. |
+| **Unlinked `@handle` Deposit** | Relay.link Quote | SOL / USDC | Deposits to `ClaimEscrow` with **0.15% fee** until recipient connects X. |
+| **Freelance Escrow** | Relay.link Quote | SOL / USDC | Locks funds in `SimpleEscrow` with **0.15% fee**; released upon milestone completion. |
+| **Causes & Donations** | Relay.link Quote | SOL / USDC | Deposits to `CauseRegistry` with **0.15% fee**; updates verified donor leaderboards. |
+| **Private Send (`$psend`)** | Relay.link Quote | SOL / USDC | Deposits to `PrivateSendPool` with **0.15% fee**; auto-claimed to recipient by backend keeper. |
 
 ---
 
-## Contract addresses
+## 3. Solana Wallet Authentication & X Linking
 
-**Live on Robinhood Chain mainnet:**
+TagioPay uses a 2-step verification: **Solana Wallet Signature + X (Twitter) OAuth 2.0 PKCE**.
 
-| | |
-| :--- | :--- |
-| Chain ID | `4663` |
-| RPC | `https://rpc.mainnet.chain.robinhood.com` |
-| `HashtagResolver` | `0x1326bBA97a060b6c4B445E0dD83342203795725E` |
-| `HashtagNFT` | `0x364469b9709D7E0E2bf6a049Aca3a8B436FbcEa3` |
+### Step 1: Sign in with Solana Wallet
+Sign the exact message with the connected wallet:
+```typescript
+const SIGNIN_MESSAGE = "Welcome to TagioPay! Please sign this message to verify your wallet ownership.";
 
-This is mainnet — real funds, real gas, permanent hashtag registrations. Test
-carefully; there's no testnet deployment to throw away mistakes on right now.
+// In frontend using @solana/wallet-adapter-react:
+const encoded = new TextEncoder().encode(SIGNIN_MESSAGE);
+const signatureBytes = await signMessage(encoded);
+const signature = bs58.encode(signatureBytes);
 
-You'll need the resolver address + ABI to build any transactions yourself
-(register/pay/update) directly from the frontend via viem/wagmi — the backend
-does not submit transactions, it only reads and indexes them.
+const res = await fetch("http://localhost:3001/auth/signin", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    walletAddress: publicKey.toBase58(),
+    signature,
+    message: SIGNIN_MESSAGE,
+  }),
+});
+const data = await res.json();
+```
 
-The resolver ABI (functions + events) lives at `backend/src/services/onchain/abi.ts`
-and mirrors `contracts/src/HashtagResolver.sol` — copy it into your wagmi/viem config.
+### Step 2: Handle Response
+* If already linked: Returns `{ token: "<jwt>", xLinked: true, xHandle: "alice" }`. Store JWT in `localStorage`.
+* If new user: Returns `{ needsXLink: true, authorizeUrl: "https://twitter.com/i/oauth2/authorize?..." }`.
+  Redirect the user: `window.location.href = data.authorizeUrl;`.
+* After X redirects back to `/auth/callback#token=<jwt>`, store the JWT and navigate to the dashboard.
 
 ---
 
-## Core flow
+## 4. Relay.link Cross-Chain Intent Integration
 
-1. **Register/pay/update onchain directly** — the frontend calls the resolver contract
-   itself (register, receivePayment, updatePayouts, updateMetadata, renewSubscription,
-   transferHashtag, transferViaRecoveryPhrase). The backend does not do this for you,
-   and there's no gas sponsorship — every call is sent (and its gas paid) by the user's
-   own wallet.
-2. **Confirm with the backend** — after every onchain action, call:
+For any operation that interacts with smart contracts (Hashtags, Splits, Escrows, Causes):
 
-   `POST /hashtags/confirm-transaction`
-   ```json
-   { "tx_hash": "0x...", "hashtag_raw": "#finance" }
-   ```
-   The backend fetches the receipt, decodes the resolver's events, and syncs Postgres.
-   Do this immediately after the transaction confirms, before reading the hashtag back.
+### 1. Request Quote & Solana Instructions (`POST /relay/quote`)
+```typescript
+const quote = await fetch("http://localhost:3001/relay/quote", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    user: publicKey.toBase58(), // User's Solana wallet
+    originCurrency: "11111111111111111111111111111111", // SOL (or USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v)
+    amount: "100000000", // Amount in base units
+    txs: [
+      {
+        to: "<ROBINHOOD_CONTRACT_ADDRESS>",
+        data: "<ENCODED_CALLDATA>",
+        value: "0",
+      },
+    ],
+  }),
+}).then(r => r.json());
+```
 
-### Things that matter for how you build the register/pay screens
+### 2. Sign and Execute on Solana
+Relay returns serialized `steps` containing Solana transaction instructions. Deserialize and sign with `sendTransaction` via `@solana/wallet-adapter-react`.
 
-- **Ownership is the NFT, not a stored field.** `hashtagOwner(hashtag)` reads the
-  HashtagNFT's `ownerOf` directly. A hashtag can also change hands via a plain
-  ERC-721 transfer (marketplace, wallet-to-wallet) — that's fully supported and
-  reflected immediately, but it won't emit a resolver event, so the backend's DB copy
-  of `owner_wallet` will look stale until the new owner touches the resolver again
-  (e.g. `updateMetadata`) or you add a manual re-sync path.
-- **Subscription is 30 days + a 72-hour grace period.** After that, the hashtag stops
-  accepting payments (`SubscriptionExpired`) and — once past both — becomes
-  registrable by *anyone*, which burns the old NFT and wipes its payouts/socials.
-  Surface the expiry countdown; a lapsed hashtag isn't recoverable by re-renewing,
-  it can be taken by someone else.
-- **`registerHashtag` and `renewSubscription` are `payable`.** Fees are denominated
-  in whatever `settlementToken` currently is: `address(0)` means native Robinhood ETH
-  (send exact fee as `msg.value`), a real ERC-20 address means approve + zero
-  `msg.value`. Read `resolver.settlementToken()` before building the fee-payment step.
-  **Both fees are currently live: `resolver.registrationFee()` and
-  `resolver.renewalFee()` are each `540000000000000` wei (0.00054 ETH, targeting
-  ~$1 at the time this was set) — don't hardcode this, read it live from the
-  contract, since it's a flat wei amount the owner adjusts manually as ETH price
-  moves, not a live oracle peg. `msg.value` must match exactly or the tx reverts
-  (`IncorrectNativeFee`).**
-- **`receivePayment` (native) is always available**, regardless of what
-  `settlementToken` is set to. `receiveTokenPayment` only works once `settlementToken`
-  points at a real ERC-20 — it reverts `SettlementTokenNotSet` while native-only.
-- **Payments can be paused** by TagioPay (`whenNotPaused` on both payment functions,
-  not on register/renew/metadata) — handle the `EnforcedPause` revert gracefully.
+### 3. Track Status (`GET /relay/intent/:requestId`)
+Poll `GET /relay/intent/${quote.requestId}` until status is `success` or `refunded`.
 
 ---
 
-## Endpoints
+## 5. Tokenized Equities (xStocks on Solana)
 
-### `GET /hashtags?owner=0x...`
-List hashtags owned by a wallet. Added specifically because the NFT isn't
-enumerable onchain, so this is the only way to answer "what handles does this
-wallet own" — no need for the localStorage-tracking workaround. Returns the same
-row shape as `GET /hashtags/:name` (`active` ones only), as an array.
-```json
-[{ "hashtag": "tagiopay", "owner_wallet": "0x...", "name": "TagioPay", "...": "..." }]
-```
-400 if `owner` is missing or not a valid `0x`-address.
+Token definitions are available via `GET /tokens`.
 
-### `GET /hashtags/check/:name`
-```json
-{ "available": true }
-```
-
-### `GET /hashtags/:name`
-Full hashtag record:
-```json
-{
-  "hashtag": "finance",
-  "owner_wallet": "0x...",
-  "name": "...",
-  "image_url": "...",
-  "website_url": "...",
-  "active": true,
-  "registered_at": "...",
-  "expires_at": "...",
-  "total_volume_usd": 0,
-  "payouts": [{ "wallet": "0x...", "percentage_bps": 10000 }],
-  "socials": [{ "key": "twitter", "value": "@linda" }]
-}
-```
-
-### `GET /hashtags/resolve/:hashtag`
-Fast path for payment routing / social bots (Redis-cached, 60s TTL):
-```json
-{
-  "hashtag": "finance",
-  "primaryDestination": "0x...",
-  "payouts": [{ "wallet": "0x...", "percentage_bps": 10000 }],
-  "expiresAt": "..."
-}
-```
-404 if the hashtag isn't active.
-
-### `POST /hashtags/confirm-transaction`
-See "Core flow" above.
-
-### `GET /transactions/hashtag?hashtag=...`
-```json
-[{ "signature": "0x...", "amount": "...", "token": "...", "is_native": true, "chain": "robinhood", "timestamp": "..." }]
-```
-
-### `POST /auth/signin` — now two-step, read the response shape carefully
-```json
-{ "walletAddress": "0x...", "signature": "0x...", "message": "Welcome to TagioPay! Please sign this message to verify your wallet ownership." }
-```
-Two possible responses:
-- **Already linked**: `{ "token": "<jwt>", "xLinked": true, "xHandle": "..." }` — same as before, use the token immediately.
-- **Not linked yet**: `{ "needsXLink": true, "authorizeUrl": "https://x.com/i/oauth2/authorize?..." }` — **no token yet.** Redirect the browser (`window.location.href = authorizeUrl`, full-page redirect, not a fetch) to that URL. X handles auth, then redirects back to `${FRONTEND_URL}/auth/callback` on our backend, which itself redirects to **your** frontend at:
-  - Success: `/auth/callback#token=<jwt>` (fragment, not query string — read via `location.hash`, never sent to any server)
-  - Failure: `/auth/callback?error=<reason>`
-
-  You need an `/auth/callback` route that reads one or the other and finishes the login (store the token, or show the error). There's no separate "check if linked" endpoint — just re-attempt `/auth/signin` after the redirect completes and you'll get the token branch this time.
-
-### X-bot pending transactions (auth required — `Authorization: Bearer <token>`)
-
-Background: our X bot lets users message it ("send 5 usdg to @friend") to request a
-transfer. The bot never signs anything — it resolves the request and stores an
-**unsigned** transaction, which the requesting user must review and sign themselves
-in the dashboard with their own connected wallet.
-
-#### `GET /transactions/pending`
-Lists the current user's pending bot-created requests:
-```json
-[{
-  "id": 1,
-  "target_type": "x_account",
-  "target_value": "friend",
-  "resolved_to_wallet": "0x...",
-  "token": "usdg",
-  "amount": "5",
-  "unsigned_to": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
-  "unsigned_data": "0xa9059cbb...",
-  "unsigned_value": "0",
-  "tweet_url": "https://x.com/i/status/1234567890",
-  "status": "pending",
-  "created_at": "..."
-}]
-```
-To sign one: call `sendTransaction` (viem/wagmi) with `{ to: unsigned_to, data: unsigned_data, value: unsigned_value }` directly — no ABI needed, it's already-encoded calldata. `token: "native"` rows have `unsigned_data: "0x"` (plain value transfer); `token: "usdg"` rows are ERC-20 `transfer()` calldata aimed at the USDG contract, not the recipient — that's expected, don't send value there.
-
-`tweet_url` links to the tweet that prompted the request (nice-to-have: show it as "requested from this post" on the pending-tx card) — it's `null` for DM-triggered requests, since there's no public tweet to point to.
-
-#### `POST /transactions/pending/:id/broadcast`
-After the user signs and the tx confirms, report it back:
-```json
-{ "tx_hash": "0x..." }
-```
-Backend verifies the receipt succeeded onchain before marking it done. 409 if it's not still `pending` (already broadcast/cancelled), 400 if the tx reverted.
-
-#### `POST /transactions/pending/:id/cancel`
-No body. Lets the user dismiss a request without signing it.
+| Ticker | Name | Solana SPL Mint Address |
+| :--- | :--- | :--- |
+| **`AAPLx`** | Apple | `XsbEhLAtcf6HdfpFZ5xEMdqW8nfAvcsP5bdudRLJzJp` |
+| **`TSLAx`** | Tesla | `XsDoVfqeBukxuZHWhdvWHBhgEHjGNst4MLodqsJHzoB` |
+| **`NVDAx`** | NVIDIA | `Xsc9qvGR1efVDFGLrVsmkzv3qi45LTBjeUKSPmx9qEh` |
+| **`GOOGLx`** | Alphabet | `XsCPL9dNWBMvFtTmwcCA5v3xWPSMEBCszbQdiLLq6aN` |
+| **`AMZNx`** | Amazon | `Xs3eBt7uRfJX8QUs4suhyU8p2M6DoUDrJyWBa8LLZsg` |
+| **`MSFTx`** | Microsoft | `XspzcW1PRtgf6Wj92HCiZdjzKCyFekVD8P5Ueh3dRMX` |
+| **`METAx`** | Meta | `Xsa62P5mvPszXL1krVUnU5ar38bBSVcWAB6fmPCo5Zu` |
+| **`COINx`** | Coinbase | `Xs7ZdzSHLU9ftNJsii5fCeJhoRWSC32SQGzGQtePxNu` |
+| **`SPYx`** | S&P 500 ETF | `XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W` |
+| **`QQQx`** | Nasdaq 100 ETF | `Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ` |
+| **`PLTRx`** | Palantir | `XsoBhf2ufR8fTyNSjqfU71DYGaE6Z3SUGAidpzriAA4` |
+| **`AMDx`** | AMD | `XsXcJ6GZ9kVnjqGsjBnktRcuwMBmvKWh8S93RefZ1rF` |
+| **`NFLXx`** | Netflix | `XsEH7wWfJJu2ZT3UCFeVfALnVA6CP5ur7Ee11KmzVpL` |
 
 ---
 
-## Namespace rules (client-side validation, mirrors the contract)
+## 6. Complete Backend REST API Reference
 
-- Normalize: strip leading `#`, lowercase.
-- Pattern: `^[a-z0-9_]{3,32}$`.
-- Payout splits must sum to exactly `10000` bps before you submit `updatePayouts` onchain — the contract will revert otherwise, but validate client-side first for a good error message.
+All requests requiring authentication accept the header `Authorization: Bearer <token>`.
+
+### Authentication
+* `POST /auth/signin`: Verifies Solana (ed25519) or EVM signature. Returns JWT or OAuth URL.
+* `GET /auth/x/callback`: OAuth callback handler. Redirects to `/auth/callback#token=...`.
+
+### Hashtags & Identity
+* `GET /hashtags/resolve/:hashtag`: Returns destination wallet(s), fan-out payout splits, and social links (<50ms cached).
+* `GET /hashtags/check/:hashtag`: Checks availability (`{ available: boolean }`).
+* `GET /hashtags/user/:walletAddress`: Lists all hashtags owned by or routing to this wallet.
+* `POST /hashtags/confirm-transaction`: Synchronizes onchain registration/renewal events.
+
+### Cross-Chain Relay (0.15% Protocol Fee)
+* `POST /relay/quote`: Builds cross-chain quote from Solana (SOL/USDC) to Robinhood smart contracts.
+* `GET /relay/intent/:requestId`: Tracks cross-chain transaction status.
+
+### Trading & Swaps
+* `GET /tokens`: Returns base currencies (`SOL`, `USDC`) and 714+ Solana xStocks equities.
+* `POST /swap/quote`: Fetches price quote and route between SOL/USDC and equities.
+* `POST /swap/plan`: Prepares execution steps for token swaps.
+
+### Escrows & Causes
+* `GET /escrows?wallet=:address`: Lists active bilateral freelance escrows.
+* `GET /causes`: Lists registered public donation causes and leaderboards.
+* `GET /private-sends?wallet=:address`: Lists shielded transfers and claim statuses.
+* `GET /pending-transactions`: Lists pending bot requests requiring user confirmation.
+
+---
+
+## 7. Hashtag Namespace & Lifecycle Rules
+
+* **Format**: `^[a-z0-9_]{3,32}$` (lowercase, numbers, underscores, 3-32 characters).
+* **Subscription**: 30-day lease duration.
+* **Grace Period**: 72 hours after expiry before handle can be claimed by another user.
+* **Payout Splits**: Up to 10 destination wallets summing to exactly 100% (10,000 basis points).
