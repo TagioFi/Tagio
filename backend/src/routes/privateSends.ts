@@ -10,18 +10,16 @@ import {
   type PrivateSendRow,
 } from "../services/x/privateSendService";
 import { createPendingPrivateSend, createPendingPrivateSendClaim } from "../services/x/pendingTransactionService";
-import { getLinkedXAccountByWallet, getLinkedXAccountByHandle } from "../services/x/xAccountService";
+import { getLinkedXAccountByWallet, getLinkedXAccountByHandle, isSolanaAddress, isEvmAddress } from "../services/x/xAccountService";
 import { resolveTargetWallet } from "../services/x/targetResolver";
 import type { BotToken, BotTargetType } from "../services/x/commandParser";
 
-// Same three target kinds the bot's $psend command accepts: @handle,
-// #hashtag, or a raw 0xaddress -- a hashtag or wallet resolves to a
-// concrete recipient with no X account needed at all.
+// Accepts @handle, #hashtag, 0x EVM address, or Solana base58 address
 function parseRecipientTarget(raw: string): { targetType: BotTargetType; targetValue: string } | null {
   const trimmed = raw.trim();
   if (trimmed.startsWith("@")) return { targetType: "x_account", targetValue: trimmed.slice(1) };
   if (trimmed.startsWith("#")) return { targetType: "hashtag", targetValue: trimmed.slice(1).toLowerCase() };
-  if (/^0x[a-fA-F0-9]{40}$/.test(trimmed)) return { targetType: "wallet", targetValue: trimmed };
+  if (isEvmAddress(trimmed) || isSolanaAddress(trimmed)) return { targetType: "wallet", targetValue: trimmed };
   return null;
 }
 
@@ -51,12 +49,29 @@ function serializePrivateSend(row: PrivateSendRow) {
 router.get("/private-sends", async (req, res, next) => {
   try {
     const wallet = typeof req.query.wallet === "string" ? req.query.wallet : null;
-    if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) {
-      res.status(400).json({ error: "wallet query param required" });
+    if (!wallet || (!isEvmAddress(wallet) && !isSolanaAddress(wallet))) {
+      res.status(400).json({ error: "wallet query param required (valid Solana base58 or EVM 0x address)" });
       return;
     }
-    const rows = await listPrivateSendsForWallet(wallet);
-    res.json(rows.map(serializePrivateSend));
+
+    let targetWallets = [wallet];
+    const linked = await getLinkedXAccountByWallet(wallet);
+    if (linked) {
+      if (linked.walletAddress && !targetWallets.includes(linked.walletAddress)) targetWallets.push(linked.walletAddress);
+      if (linked.evmWalletAddress && !targetWallets.includes(linked.evmWalletAddress)) targetWallets.push(linked.evmWalletAddress);
+      if (linked.solanaWalletAddress && !targetWallets.includes(linked.solanaWalletAddress)) targetWallets.push(linked.solanaWalletAddress);
+    }
+
+    // Collect all private sends for any of the user's bound addresses
+    const allRows = await Promise.all(targetWallets.map(w => listPrivateSendsForWallet(w)));
+    const uniqueMap = new Map<number, PrivateSendRow>();
+    for (const rows of allRows) {
+      for (const row of rows) {
+        uniqueMap.set(row.id, row);
+      }
+    }
+    const merged = Array.from(uniqueMap.values());
+    res.json(merged.map(serializePrivateSend));
   } catch (err) {
     next(err);
   }
@@ -110,15 +125,29 @@ router.post("/private-sends", requireAuth, async (req: AuthedRequest, res, next)
       }
     }
 
-    const senderWallet = req.walletAddress as `0x${string}`;
-    const prepared = await preparePrivateSend(senderWallet, recipientWallet as `0x${string}`, amount, token);
+    const senderEvm = sender.evmWalletAddress || (isEvmAddress(req.walletAddress!) ? req.walletAddress : null);
+    let resolvedRecipientEvm = isEvmAddress(recipientWallet) ? recipientWallet : null;
+    if (!resolvedRecipientEvm) {
+      const recipientAccount = await getLinkedXAccountByWallet(recipientWallet);
+      resolvedRecipientEvm = recipientAccount?.evmWalletAddress || null;
+    }
+
+    if (!senderEvm || !resolvedRecipientEvm) {
+      res.status(409).json({
+        error: "Private transfers on Robinhood Chain require both sender and recipient to have a linked EVM address.",
+      });
+      return;
+    }
+
+    const senderWallet = senderEvm as `0x${string}`;
+    const prepared = await preparePrivateSend(senderWallet, resolvedRecipientEvm as `0x${string}`, amount, token);
 
     const row = await createPrivateSendRow({
       commitment: prepared.commitment,
       secret: prepared.secret,
       senderWallet,
       senderXUserId: sender.xUserId,
-      recipientWallet: recipientWallet as `0x${string}`,
+      recipientWallet: resolvedRecipientEvm as `0x${string}`,
       recipientXUserId,
       token,
       amount,
@@ -127,7 +156,7 @@ router.post("/private-sends", requireAuth, async (req: AuthedRequest, res, next)
     });
 
     const created = await createPendingPrivateSend({
-      requestedByWallet: senderWallet,
+      requestedByWallet: req.walletAddress!,
       requestedByXUserId: sender.xUserId,
       sourceRef: `dapp-psend-${row.id}`,
       commitment: prepared.commitment,
@@ -150,12 +179,7 @@ router.post("/private-sends", requireAuth, async (req: AuthedRequest, res, next)
 });
 
 // Manual claim, dashboard-native -- same fallback as $claim, but resolved by
-// row id + connected-wallet match instead of X identity, so it works even
-// for a recipient who never linked X in the first place... except sends
-// currently always require a linked recipient to be created at all (see
-// above), so in practice this always matches an X-linked wallet too; kept
-// wallet-based rather than X-based here since that's the auth this endpoint
-// actually has (JWT -> wallet), not an X session.
+// row id + connected-wallet match instead of X identity
 router.post("/private-sends/:id/claim", requireAuth, async (req: AuthedRequest, res, next) => {
   try {
     const id = Number(req.params.id);
@@ -169,7 +193,14 @@ router.post("/private-sends/:id/claim", requireAuth, async (req: AuthedRequest, 
       res.status(404).json({ error: "private send not found" });
       return;
     }
-    if (row.recipient_wallet.toLowerCase() !== req.walletAddress!.toLowerCase()) {
+
+    const requester = await getLinkedXAccountByWallet(req.walletAddress!);
+    const callerAddresses = [req.walletAddress!.toLowerCase()];
+    if (requester?.evmWalletAddress) callerAddresses.push(requester.evmWalletAddress.toLowerCase());
+    if (requester?.solanaWalletAddress) callerAddresses.push(requester.solanaWalletAddress.toLowerCase());
+    if (requester?.walletAddress) callerAddresses.push(requester.walletAddress.toLowerCase());
+
+    if (!callerAddresses.includes(row.recipient_wallet.toLowerCase())) {
       res.status(403).json({ error: "you're not the recipient of this private send" });
       return;
     }
@@ -178,20 +209,14 @@ router.post("/private-sends/:id/claim", requireAuth, async (req: AuthedRequest, 
       return;
     }
 
-    // row.recipient_x_user_id may be null (a #hashtag/wallet-targeted send
-    // has no X account at all) -- but every dashboard user reaching this
-    // authed endpoint has one regardless, since linking X is mandatory at
-    // sign-in, so the caller's own account is the right one to use here,
-    // not the send's (possibly absent) recorded recipient X id.
-    const requester = await getLinkedXAccountByWallet(req.walletAddress!);
     const claim = buildUnsignedClaim(
       row.commitment as `0x${string}`,
-      req.walletAddress as `0x${string}`,
+      row.recipient_wallet as `0x${string}`,
       row.secret as `0x${string}`,
     );
     const created = await createPendingPrivateSendClaim({
       requestedByWallet: req.walletAddress!,
-      requestedByXUserId: requester!.xUserId,
+      requestedByXUserId: requester?.xUserId || "",
       sourceRef: `dapp-psend-claim-${row.id}`,
       commitment: row.commitment,
       token: row.token,
