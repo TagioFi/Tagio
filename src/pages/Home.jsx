@@ -82,9 +82,9 @@ export default function Home() {
 
     /* ---------- WebGL field ----------
        A single full-screen fragment shader, no models and no external assets.
-       It layers what the brand plates are made of: soft airbrushed black
-       masses, a halftone screen breaking their mid-tones, an anamorphic acid
-       flare, vertical striation slicing through the smudges, and grain. */
+       It layers what the brand plates are made of: one soft airbrushed black
+       mass, a halftone screen breaking its mid-tones, an anamorphic acid
+       flare, vertical striation slicing through the smudge, and grain. */
     const pointer = { x: 0, y: 0 }
     if (!reduceMotion) {
       addWin('mousemove', (ev) => {
@@ -142,16 +142,13 @@ export default function Home() {
         vec2 p = (vUv - 0.5) * vec2(aspect, 1.0);
         float t = uTime;
 
-        /* --- the masses, placed like the plate: heavy top-right, two below.
-               Each rides the pointer at its own depth, and all three share the
-               advected noise domain, which is what reads as flow. --- */
+        /* --- a single airbrushed mass, centred on the panel and a touch
+               larger than the old top-right smudge. It rides the pointer and
+               shares the advected noise domain, which is what reads as flow. --- */
         vec2 pm = p + uPointer * 0.05;
         vec2 flow = uFlow;
 
-        float m = 0.0;
-        m = max(m, mass(pm + uPointer * 0.030, vec2( 0.30,  0.20), vec2(0.32, 0.21), 1.3, t,        flow));
-        m = max(m, mass(pm + uPointer * 0.014, vec2( 0.27, -0.19), vec2(0.28, 0.18), 4.7, t * 1.15, flow * 0.7));
-        m = max(m, mass(pm + uPointer * 0.048, vec2(-0.34, -0.32), vec2(0.26, 0.15), 8.1, t * 0.85, flow * 1.35));
+        float m = mass(pm + uPointer * 0.030, vec2(0.0, 0.0), vec2(0.40, 0.27), 1.3, t, flow);
         m = clamp(m, 0.0, 1.0);
 
         /* --- halftone screen through the mid-tones --- */
