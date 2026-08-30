@@ -6,7 +6,7 @@ import {
   type PublicClient,
 } from "viem";
 import { config } from "../config";
-import { getPublicClient } from "../services/onchain/client";
+import { getPublicClient } from "../v1/services/onchain/client";
 import { resolveToken } from "./rwaTokens";
 import { encodeWethPath, quoteSwap, type SwapQuote, type SwapRouting } from "./uniswapV3";
 

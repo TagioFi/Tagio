@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseCommand } from "../src/services/x/commandParser";
+import { parseCommand } from "../src/v1/services/x/commandParser";
 
 describe("parseCommand", () => {
   test("parses a native ETH send to a wallet address", () => {

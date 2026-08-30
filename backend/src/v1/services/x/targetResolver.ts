@@ -14,6 +14,16 @@ export async function resolveTargetWallet(
       return command.targetValue as `0x${string}`;
 
     case "hashtag": {
+      // 1. Check v2 handles first
+      const v2Res = await pool.query(
+        "SELECT owner_wallet FROM v2_handles WHERE LOWER(handle) = LOWER($1)",
+        [command.targetValue.toLowerCase()]
+      );
+      if (v2Res.rows.length > 0) {
+        return v2Res.rows[0].owner_wallet as `0x${string}`;
+      }
+
+      // 2. Check legacy v1 hashtags
       const { rows } = await pool.query(
         "SELECT owner_wallet FROM hashtags WHERE hashtag = $1 AND active = true",
         [command.targetValue],
@@ -21,7 +31,18 @@ export async function resolveTargetWallet(
       return rows.length === 0 ? null : (rows[0].owner_wallet as `0x${string}`);
     }
 
-    case "x_account":
+    case "x_account": {
+      // 1. Check v2 handles linked to this X handle
+      const v2Res = await pool.query(
+        "SELECT owner_wallet FROM v2_handles WHERE LOWER(x_handle) = LOWER($1) LIMIT 1",
+        [command.targetValue.toLowerCase()]
+      );
+      if (v2Res.rows.length > 0) {
+        return v2Res.rows[0].owner_wallet as `0x${string}`;
+      }
+
+      // 2. Check legacy x_accounts
       return (await getWalletByXHandle(command.targetValue)) as `0x${string}` | null;
+    }
   }
 }

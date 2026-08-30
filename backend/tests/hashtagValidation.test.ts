@@ -4,7 +4,7 @@ import {
   isValidHashtag,
   isValidPayoutSplit,
   TOTAL_BPS,
-} from "../src/services/hashtagValidation";
+} from "../src/v1/services/hashtagValidation";
 
 describe("normalizeHashtag", () => {
   test("strips leading # and lowercases", () => {

@@ -1,6 +1,6 @@
 import { encodePacked, erc20Abi, formatUnits, parseUnits, type PublicClient } from "viem";
 import { config } from "../config";
-import { getPublicClient } from "../services/onchain/client";
+import { getPublicClient } from "../v1/services/onchain/client";
 import { resolveToken } from "./rwaTokens";
 import { poolKeyToId, quoteV4Direct, type PoolKey } from "./uniswapV4";
 

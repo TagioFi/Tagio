@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildUnsignedTransfer, buildUnsignedHashtagPayment } from "../src/services/x/txBuilder";
+import { buildUnsignedTransfer, buildUnsignedHashtagPayment } from "../src/v1/services/x/txBuilder";
 import { config } from "../src/config";
 
 const WALLET = "0x60a2fC0D95DE145cf1f913194AeD627D61c8b530" as const;

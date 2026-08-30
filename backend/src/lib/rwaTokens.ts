@@ -1,6 +1,6 @@
 import { erc20Abi, getAddress, isAddress } from "viem";
 import { config } from "../config";
-import { getPublicClient } from "../services/onchain/client";
+import { getPublicClient } from "../v1/services/onchain/client";
 
 // ============================================================================
 // SECTION 1: ROBINHOOD CHAIN TOKENS & EQUITIES (Preserved for Robinhood Engine)

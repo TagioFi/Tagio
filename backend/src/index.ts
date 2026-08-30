@@ -2,12 +2,12 @@ import "dotenv/config";
 import { app } from "./app";
 import { runMigrations } from "./db/migrate";
 import { config } from "./config";
-import { pollMentions, pollDirectMessages } from "./services/x/poller";
-import { XApiError } from "./services/x/botClient";
-import { sweepExpiredAllocations } from "./services/x/unclaimedAllocationService";
-import { sweepExpiredClarifications } from "./services/x/clarificationService";
-import { checkWaitingGiveaways } from "./services/x/giveawayHandler";
-import { runKeeperCycle } from "./services/x/keeperService";
+import { pollMentions, pollDirectMessages } from "./v1/services/x/poller";
+import { XApiError } from "./v1/services/x/botClient";
+import { sweepExpiredAllocations } from "./v1/services/x/unclaimedAllocationService";
+import { sweepExpiredClarifications } from "./v1/services/x/clarificationService";
+import { checkWaitingGiveaways } from "./v1/services/x/giveawayHandler";
+import { runKeeperCycle } from "./v1/services/x/keeperService";
 import { log } from "./lib/logger";
 
 // 402 (credits/billing exhausted) and 429 (rate limited) mean "stop hitting this
