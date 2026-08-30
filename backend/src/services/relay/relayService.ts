@@ -1,13 +1,13 @@
 /**
- * Relay.link Cross-Chain Intent & Execution Service
- * Bridges Solana (origin, SOL/USDC) to Robinhood Chain (destination, smart contracts).
+ * Relay.link Cross-Chain & Same-Chain Intent Service
+ * Handles Solana-to-Solana swaps (via Jupiter routing) and Solana-to-Robinhood contract execution.
  *
- * Implements a strict 0.15% (15 bps) protocol fee on all cross-chain calls.
+ * Implements an optional 0.15% (15 bps) protocol fee on all Relay quotes.
  */
 import { config } from "../../config";
 
 export const SOLANA_CHAIN_ID = 792703809;
-export const ROBINHOOD_CHAIN_ID = 13746; // Robinhood Nitro L2 (Arbitrum stack)
+export const ROBINHOOD_CHAIN_ID = 13746; // Robinhood Nitro L2
 export const PROTOCOL_FEE_BPS = 15; // 0.15%
 
 export const SOL_MINT = "11111111111111111111111111111111";
@@ -21,12 +21,15 @@ export interface RelayTxCall {
 
 export interface GetQuoteParams {
   user: string; // Solana base58 wallet address
-  originCurrency: string; // SOL or USDC mint
-  destinationCurrency?: string; // e.g. 0x0000... (ETH) or USDG
-  amount: string; // base units (lamports for SOL, 6 decimals for USDC)
-  recipient?: string; // destination recipient if direct payment
-  txs?: RelayTxCall[]; // contract calldata calls to execute on Robinhood
+  originChainId?: number;
+  destinationChainId?: number;
+  originCurrency: string; // token mint or 0x address
+  destinationCurrency: string; // token mint or 0x address
+  amount: string; // base units (e.g. lamports for SOL, 6 decimals for USDC)
+  recipient?: string; // destination recipient
+  txs?: RelayTxCall[]; // contract calldata calls to execute
   feeRecipient?: string;
+  tradeType?: "EXACT_INPUT" | "EXACT_OUTPUT";
 }
 
 export interface RelayStepItem {
@@ -69,30 +72,38 @@ export interface RelayQuoteResponse {
     recipient: string;
     currencyIn: any;
     currencyOut: any;
+    totalImpact?: { usd: string; percent: string };
+    swapImpact?: { usd: string; percent: string };
+    rate?: string;
     timeEstimate: number;
+    route?: any;
   };
 }
 
 export async function fetchRelayQuote(params: GetQuoteParams): Promise<RelayQuoteResponse> {
-  const body = {
+  const originChainId = params.originChainId ?? SOLANA_CHAIN_ID;
+  const destinationChainId = params.destinationChainId ?? (params.txs ? ROBINHOOD_CHAIN_ID : SOLANA_CHAIN_ID);
+
+  const body: Record<string, any> = {
     user: params.user,
-    originChainId: SOLANA_CHAIN_ID,
-    destinationChainId: ROBINHOOD_CHAIN_ID,
+    originChainId,
+    destinationChainId,
     originCurrency: params.originCurrency,
-    destinationCurrency: params.destinationCurrency || "0x0000000000000000000000000000000000000000",
+    destinationCurrency: params.destinationCurrency,
     amount: params.amount,
-    recipient: params.recipient,
+    recipient: params.recipient || params.user,
     txs: params.txs,
-    tradeType: "EXACT_INPUT",
-    appFees: params.feeRecipient
-      ? [
-          {
-            recipient: params.feeRecipient,
-            bps: PROTOCOL_FEE_BPS,
-          },
-        ]
-      : undefined,
+    tradeType: params.tradeType || "EXACT_INPUT",
   };
+
+  if (params.feeRecipient) {
+    body.appFees = [
+      {
+        recipient: params.feeRecipient,
+        bps: PROTOCOL_FEE_BPS,
+      },
+    ];
+  }
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",

@@ -211,9 +211,10 @@ Trade real-world assets natively on Solana via [xStocks.fi](https://xstocks.fi/p
   * `SPYx` (S&P 500 Index) — `XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W`
   * `QQQx` (Nasdaq 100 Index) — `Xs8S1uUs1zvS2p7iwtsG3b6fkhpvmwz4GYU3gWAmWHZ`
 * **Features**:
-  * Buy / Sell tabs against **`SOL`** and **`USDC`**.
+  * **Relay-Powered Same-Chain Swaps**: Swapping `SOL` or `USDC` into any xStock is executed via Relay's Solana route with automatic **0.15% app fee** collection.
   * Real-time quote preview (`POST /swap/quote`).
-  * Price impact alert if slippage >3%.
+  * Instant plan generation (`POST /swap/plan`) returning serialized Solana instructions for wallet signing.
+  * Price impact warnings if slippage >3%.
 
 ---
 
