@@ -5,10 +5,24 @@ import { ensureWallet } from "./resolver-actions";
 import { signIn as signInRequest } from "./tagio";
 
 const AUTH_TOKEN_KEY = "tagiopay_auth_token";
+// The JWT carries only the wallet address, so the linked X handle has to be
+// remembered separately for the dashboard's active-user pill to survive a
+// reload that short-circuits straight to "already signed in".
+const X_HANDLE_KEY = "tagiopay_x_handle";
+
+export function getCachedXHandle(): string {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem(X_HANDLE_KEY) ?? "";
+}
+
+function cacheXHandle(handle: string): void {
+  if (handle) localStorage.setItem(X_HANDLE_KEY, handle);
+}
 
 // Must match the backend's SIGNIN_MESSAGE exactly (backend/src/routes/auth.ts) --
 // verification checks the signed message content byte-for-byte.
-export const SIGNIN_MESSAGE = "Welcome to TagioPay! Please sign this message to verify your wallet ownership.";
+export const SIGNIN_MESSAGE =
+  "Welcome to TagioPay! Please sign this message to verify your wallet ownership.";
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -21,6 +35,7 @@ export function setAuthToken(token: string): void {
 
 export function clearAuthToken(): void {
   localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(X_HANDLE_KEY);
 }
 
 // Treat a token as dead slightly before its stated expiry so one that lapses
@@ -31,7 +46,9 @@ function tokenExpiresAt(token: string): number | null {
   try {
     const payload = token.split(".")[1];
     if (!payload) return null;
-    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as { exp?: number };
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
+      exp?: number;
+    };
     return typeof json.exp === "number" ? json.exp * 1000 : null;
   } catch {
     return null;
@@ -75,6 +92,7 @@ export async function signInWithSolana(
 
   if ("token" in result) {
     setAuthToken(result.token);
+    cacheXHandle(result.xHandle);
     return { status: "signed_in", token: result.token, xHandle: result.xHandle };
   }
 
@@ -95,6 +113,7 @@ export async function signInWithWallet(): Promise<SignInOutcome> {
 
   if ("token" in result) {
     setAuthToken(result.token);
+    cacheXHandle(result.xHandle);
     return { status: "signed_in", token: result.token, xHandle: result.xHandle };
   }
 

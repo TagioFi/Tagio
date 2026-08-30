@@ -6,7 +6,22 @@ const router = Router();
 
 router.post("/relay/quote", async (req, res, next) => {
   try {
-    const { user, originCurrency, destinationCurrency, amount, recipient, txs } = req.body as GetQuoteParams;
+    const {
+      user,
+      originCurrency,
+      destinationCurrency,
+      amount,
+      recipient,
+      txs,
+      // Forwarded so the frontend can price the Robinhood leg of a contract
+      // call before committing to it: a payable call (receivePayment, donate)
+      // needs a msg.value denominated in destination-chain ETH, which is only
+      // knowable by first quoting the plain bridge. fetchRelayQuote already
+      // accepted all three; the route just wasn't passing them through.
+      originChainId,
+      destinationChainId,
+      tradeType,
+    } = req.body as GetQuoteParams;
 
     if (!user || !originCurrency || !amount) {
       res.status(400).json({ error: "user, originCurrency, and amount are required" });
@@ -20,6 +35,9 @@ router.post("/relay/quote", async (req, res, next) => {
       amount,
       recipient,
       txs,
+      originChainId,
+      destinationChainId,
+      tradeType,
       feeRecipient: config.robinhood.feeWallet,
     });
 

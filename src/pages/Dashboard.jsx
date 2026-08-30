@@ -2,13 +2,23 @@ import { useState, useEffect, useRef } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAccount } from 'wagmi'
+import { useWallet, useConnection } from '@solana/wallet-adapter-react'
 import { getAccount } from 'wagmi/actions'
 import { formatUnits } from 'viem'
-import { checkHashtag, getHashtag, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getSwapQuote, getSwapPlan, getWalletBalances, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend, getWalletIdentity, isSessionExpiredError, SESSION_EXPIRED_MESSAGE } from '../lib/tagio'
-import { registerOnchain, renewOnchain, payOnchain, updatePayoutsOnchain, updateMetadataOnchain, signAndConfirmSwapPlan, signAndConfirmSteps, createCauseOnchain, donateToCauseOnchain, withdrawFromCauseOnchain, createEscrowOnchain, acceptEscrowOnchain, cancelEscrowOnchain, deliverEscrowOnchain, releaseEscrowOnchain, forceReleaseEscrowOnchain, refundEscrowOnchain, friendlyError } from '../lib/resolver-actions'
+import { checkHashtag, getHashtag, getHashtagsByOwner, resolveHashtag, getHashtagTransactions, getPendingTransactions, broadcastPendingTransaction, cancelPendingTransaction, getSwapTokens, getCauses, getCauseLeaderboard, getEscrows, getPrivateSends, createPrivateSend, claimPrivateSend, getWalletIdentity, isSessionExpiredError, SESSION_EXPIRED_MESSAGE } from '../lib/tagio'
+import { registerOnchain, renewOnchain, updatePayoutsOnchain, updateMetadataOnchain, signAndConfirmSwapPlan, signAndConfirmSteps, createCauseOnchain, donateToCauseOnchain, withdrawFromCauseOnchain, createEscrowOnchain, acceptEscrowOnchain, cancelEscrowOnchain, deliverEscrowOnchain, releaseEscrowOnchain, forceReleaseEscrowOnchain, refundEscrowOnchain, friendlyError } from '../lib/resolver-actions'
 import { wagmiConfig } from '../lib/wagmi'
 import { WalletControl } from '../components/WalletControl'
-import { signInWithWallet, getAuthToken, getLiveAuthToken, clearAuthToken } from '../lib/auth'
+import { signInWithSolana, getAuthToken, getLiveAuthToken, clearAuthToken, getCachedXHandle } from '../lib/auth'
+import { useSolanaBalances } from '../lib/solana-assets'
+import { UniversalSend } from '../components/dashboard/UniversalSend'
+import { XStocks } from '../components/dashboard/XStocks'
+import { Recovery } from '../components/dashboard/Recovery'
+import { Airdrops } from '../components/dashboard/Airdrops'
+// Solana-aware icon: falls back to the xStocks directory's remote iconUrl for
+// equities, which the local EVM-symbol TokenIcon below has no entry for.
+import { TokenIcon as SolanaTokenIcon } from '../components/dashboard/shared'
+import { generateRecoveryPhrase } from '../lib/recovery'
 
 // Served straight from /public -- no bundler import needed. COIN has no
 // icon yet; callers fall back to the plain "#" glyph for it.
@@ -51,6 +61,7 @@ const I = {
   shield: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l8 4v6c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6z" /><polyline points="9 12 11 14 15 10" /></svg>,
   lock: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></svg>,
   terminal: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="4 6 10 12 4 18" /><line x1="12" y1="18" x2="20" y2="18" /></svg>,
+  key: <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="7.5" cy="15.5" r="4.5" /><path d="M10.7 12.3L21 2" /><path d="M17 6l3 3" /><path d="M14 9l3 3" /></svg>,
 }
 
 /* ---------- helpers ---------- */
@@ -72,9 +83,27 @@ const trackKey = (addr) => 'tagio.handles.' + addr.toLowerCase()
 const loadTracked = (addr) => { try { return JSON.parse(localStorage.getItem(trackKey(addr)) || '[]') } catch { return [] } }
 const addTracked = (addr, name) => { const list = loadTracked(addr); if (!list.includes(name)) { list.push(name); localStorage.setItem(trackKey(addr), JSON.stringify(list)) } }
 
-const SOCIAL_KEYS = [['x', 'X'], ['telegram', 'Telegram'], ['discord', 'Discord']]
+// Spec Module 3's social set. `bio` rides along as a social link because
+// HashtagResolver has no dedicated bio field -- SocialLink is an arbitrary
+// key/value pair, and the backend already indexes it into social_links. Six
+// keys stays inside the contract's MAX_SOCIALS of 8.
+const SOCIAL_KEYS = [
+  ['x', 'X'],
+  ['telegram', 'Telegram'],
+  ['discord', 'Discord'],
+  ['github', 'GitHub'],
+  ['email', 'Email'],
+]
+const BIO_KEY = 'bio'
+// Contract limits, mirrored so the UI blocks a revert instead of causing one.
+const MAX_SOCIAL_VAL = 128
+const MAX_NAME_LEN = 64
+const MAX_URL_LEN = 256
+const MAX_PAYOUTS = 10
+
+const emptySocials = () => Object.fromEntries([...SOCIAL_KEYS.map(([k]) => [k, '']), [BIO_KEY, '']])
 const socialsToObj = (list) => {
-  const o = { x: '', telegram: '', discord: '' }
+  const o = emptySocials()
   for (const s of list || []) {
     const k = s.key === 'twitter' ? 'x' : s.key
     if (k in o) o[k] = s.value
@@ -167,12 +196,13 @@ function ConnectPrompt() {
     </div>
   )
 }
-function Overview({ handles, activity, loading, go, manage, renew, renewing }) {
+function Overview({ handles, activity, loading, go, manage, renew, renewing, escrowCount, causeCount }) {
   const now = Date.now()
   const recent = activity.filter((tx) => now - new Date(tx.timestamp).getTime() < 30 * DAY_MS)
   const totalIn30d = recent.reduce((s, tx) => s + ethOf(tx), 0)
   const recips = handles.reduce((s, h) => s + h.splits.length, 0)
   const volume = handles.reduce((s, h) => s + h.volumeUsd, 0)
+  const expiringSoon = handles.filter((h) => h.expiresDays < 7).length
   const chartData = Array.from({ length: 14 }, (_, i) => {
     const dayStart = now - (13 - i) * DAY_MS
     return activity.reduce((s, tx) => {
@@ -184,9 +214,11 @@ function Overview({ handles, activity, loading, go, manage, renew, renewing }) {
     <div className="fade-in">
       <div className="grid stats">
         <Stat icon={I.down} label="Received (30d)" value={fmt(totalIn30d)} unit="ETH" sub={recent.length + ' payment' + (recent.length === 1 ? '' : 's') + ' indexed'} />
-        <Stat icon={I.hash} label="Active handles" value={handles.length} sub={loading ? 'Loading…' : 'All resolving'} />
+        <Stat icon={I.hash} label="Handles owned" value={handles.length} sub={loading ? 'Loading…' : expiringSoon > 0 ? `${expiringSoon} renewing soon` : 'All resolving'} />
         <Stat icon={I.split} label="Split recipients" value={recips} sub="Across all handles" />
         <Stat icon={I.bolt} label="Total volume" value={'$' + fmt(volume)} sub="Lifetime, all handles" />
+        <Stat icon={I.shield} label="Active escrows" value={escrowCount ?? '—'} sub="Awaiting delivery or release" />
+        <Stat icon={I.heart} label="Open causes" value={causeCount ?? '—'} sub="Accepting donations" />
       </div>
       <div className="grid two" style={{ marginTop: '1rem' }}>
         <div className="card pad-lg">
@@ -230,13 +262,37 @@ function Claim({ toast, onRegistered }) {
     }, 350)
     return () => { live = false; clearTimeout(t) }
   }, [norm])
+  // Spec Module 3 step 2: a recovery phrase is generated before the handle is
+  // minted, because only its keccak256 hash can be written -- and it's written
+  // as part of registerHashtag itself, so there's no second chance to add one
+  // to a handle registered without it.
+  const [phrase, setPhrase] = useState('')
+  const [saved, setSaved] = useState(false)
+  useEffect(() => { setPhrase(''); setSaved(false) }, [norm])
+
+  const preparePhrase = () => { setPhrase(generateRecoveryPhrase()); setSaved(false) }
+
+  const copyPhrase = async () => {
+    try {
+      await navigator.clipboard.writeText(phrase)
+      toast('Recovery phrase copied — store it somewhere safe')
+    } catch {
+      toast('Couldn’t copy — select the phrase and copy it manually')
+    }
+  }
+
   const doRegister = async () => {
     const name = norm
     setReg({ status: 'busy' })
     try {
-      await registerOnchain({ hashtag: name, name })
-      setReg({ status: 'done', name })
-      setQ('')
+      await registerOnchain({ hashtag: name, name, recoveryPhrase: phrase })
+      setReg({ status: 'done', name, phrase })
+      // Deliberately NOT clearing the input here. Doing so changes `norm`,
+      // which fires the availability effect above, whose first act is to reset
+      // `reg` to idle for anything not mid-flight -- so the success line and
+      // its "view record" link were wiped in the same tick they were set.
+      // Leaving the name in place keeps the confirmation visible; typing a
+      // different name clears it, which is when clearing is actually wanted.
       toast(`#${name} registered onchain · 30-day subscription`)
       onRegistered?.(name)
     } catch (e) {
@@ -251,8 +307,31 @@ function Claim({ toast, onRegistered }) {
         <span className="hash">#</span>
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="yourname" spellCheck="false" />
         {state === 'taken' && <Link className="btn sm" to="/h/$name" params={{ name: norm }}>View record</Link>}
-        {state === 'available' && <button className="btn sm" disabled={reg.status === 'busy'} onClick={doRegister}>{reg.status === 'busy' ? 'Confirm in wallet…' : 'Register'}</button>}
+        {state === 'available' && !phrase && <button className="btn sm" onClick={preparePhrase}>Continue</button>}
+        {state === 'available' && phrase && <button className="btn sm" disabled={reg.status === 'busy' || !saved} onClick={doRegister}>{reg.status === 'busy' ? 'Confirm in wallet…' : 'Register'}</button>}
       </div>
+
+      {state === 'available' && phrase && reg.status !== 'done' && (
+        <div className="send-preview">
+          <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Account recovery phrase</div>
+          <p style={{ fontSize: '0.85rem', color: 'var(--ink-soft)', lineHeight: 1.55 }}>
+            Write these 12 words down. They're the only way to move <b>#{norm}</b> to a new wallet if you lose this one —
+            TagioPay never sees them, and only their hash goes onchain, so they can't be reissued.
+          </p>
+          <div className="mono" style={{ margin: '0.75rem 0', padding: '0.9rem', background: 'var(--paper-deep)', borderRadius: 'var(--radius-sm)', fontSize: '0.9rem', lineHeight: 1.7, wordSpacing: '0.25rem' }}>
+            {phrase}
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="btn ghost sm" onClick={copyPhrase}>Copy</button>
+            <button className="btn ghost sm" onClick={preparePhrase}>Regenerate</button>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', color: 'var(--ink-soft)', cursor: 'pointer' }}>
+              <input type="checkbox" checked={saved} onChange={(e) => setSaved(e.target.checked)} />
+              I've saved it somewhere safe
+            </label>
+          </div>
+        </div>
+      )}
+
       {reg.status === 'error' && <div className="status bad">{I.x} {reg.message}</div>}
       {reg.status === 'done' && <div className="status ok">{I.check} #{reg.name} is yours · <Link to="/h/$name" params={{ name: reg.name }} style={{ color: 'var(--green-deep)', textDecoration: 'underline' }}>view record</Link></div>}
       {state === 'invalid' && <div className="status bad">{I.x} 3–32 chars · lowercase letters, numbers, underscore only</div>}
@@ -281,20 +360,40 @@ function Resolver({ handle, toast, onSaved }) {
   const record = handle.record
   const [splits, setSplits] = useState(handle.splits.map((s) => ({ ...s })))
   const [socials, setSocials] = useState({ ...handle.socials })
+  // Spec Module 3's profile metadata editor. These three live directly on the
+  // contract record (name/imageUrl/websiteUrl); bio rides in `socials`.
+  const initialProfile = () => ({
+    name: record.name || '',
+    imageUrl: record.image_url || '',
+    websiteUrl: record.website_url || '',
+  })
+  const [profile, setProfile] = useState(initialProfile)
   const [save, setSave] = useState({ status: 'idle' })
   useEffect(() => {
-    setSplits(handle.splits.map((s) => ({ ...s }))); setSocials({ ...handle.socials }); setSave({ status: 'idle' })
+    setSplits(handle.splits.map((s) => ({ ...s }))); setSocials({ ...handle.socials }); setProfile(initialProfile()); setSave({ status: 'idle' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handle.name])
   const totalPct = splits.reduce((s, r) => s + (parseFloat(r.pct) || 0), 0)
   const totalBps = Math.round(totalPct * 100)
   const walletsOk = splits.every((r) => ADDR_RE.test(r.wallet.trim()))
-  const valid = totalBps === 10000 && walletsOk
+  // MAX_PAYOUTS is enforced by the contract (TooManyPayouts); catching it here
+  // means an 11th recipient is refused in the form rather than by a revert the
+  // user pays gas to discover.
+  const countOk = splits.length > 0 && splits.length <= MAX_PAYOUTS
+  const valid = totalBps === 10000 && walletsOk && countOk
   const setRow = (id, key, val) => setSplits(splits.map((r) => (r.id === id ? { ...r, [key]: val } : r)))
-  const addRow = () => setSplits([...splits, { id: Date.now(), wallet: '', pct: 0 }])
+  const addRow = () => setSplits((rows) => (rows.length >= MAX_PAYOUTS ? rows : [...rows, { id: Date.now(), wallet: '', pct: 0 }]))
   const delRow = (id) => setSplits(splits.filter((r) => r.id !== id))
   const distribute = () => { const n = splits.length, base = Math.floor(10000 / n); setSplits(splits.map((r, i) => ({ ...r, pct: (base + (i === n - 1 ? 10000 - base * n : 0)) / 100 }))) }
   const splitsChanged = JSON.stringify(splits.map((r) => [r.wallet.trim().toLowerCase(), Math.round((parseFloat(r.pct) || 0) * 100)])) !== JSON.stringify(handle.splits.map((r) => [r.wallet.toLowerCase(), Math.round(r.pct * 100)]))
   const socialsChanged = JSON.stringify(socials) !== JSON.stringify(handle.socials)
+  const profileChanged = JSON.stringify(profile) !== JSON.stringify(initialProfile())
+  const metadataChanged = socialsChanged || profileChanged
+  const profileOk =
+    profile.name.length <= MAX_NAME_LEN &&
+    profile.imageUrl.length <= MAX_URL_LEN &&
+    profile.websiteUrl.length <= MAX_URL_LEN &&
+    Object.values(socials).every((v) => (v || '').length <= MAX_SOCIAL_VAL)
   const doSave = async () => {
     setSave({ status: 'busy' })
     try {
@@ -304,13 +403,17 @@ function Resolver({ handle, toast, onSaved }) {
           payouts: splits.map((r) => ({ wallet: r.wallet.trim(), percentageBps: Math.round((parseFloat(r.pct) || 0) * 100) })),
         })
       }
-      if (socialsChanged) {
+      if (metadataChanged) {
         await updateMetadataOnchain({
           hashtag: handle.name,
-          name: record.name || handle.name,
-          imageUrl: record.image_url || '',
-          websiteUrl: record.website_url || '',
-          socials: SOCIAL_KEYS.filter(([k]) => socials[k]).map(([k]) => ({ key: k, value: socials[k] })),
+          name: profile.name || handle.name,
+          imageUrl: profile.imageUrl,
+          websiteUrl: profile.websiteUrl,
+          // updateMetadata replaces the whole social array, so every key that
+          // still has a value has to be re-sent -- omitting one deletes it.
+          socials: [...SOCIAL_KEYS.map(([k]) => k), BIO_KEY]
+            .filter((k) => socials[k])
+            .map((k) => ({ key: k, value: socials[k] })),
         })
       }
       setSave({ status: 'idle' })
@@ -320,7 +423,7 @@ function Resolver({ handle, toast, onSaved }) {
       setSave({ status: 'error', message: friendlyError(e) })
     }
   }
-  const dirty = splitsChanged || socialsChanged
+  const dirty = splitsChanged || metadataChanged
   return (
     <div className="grid two fade-in" style={{ alignItems: 'start' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -335,15 +438,47 @@ function Resolver({ handle, toast, onSaved }) {
               <button className="rdel" onClick={() => delRow(r.id)} disabled={splits.length === 1} style={{ opacity: splits.length === 1 ? 0.3 : 1 }}>{I.x}</button>
             </div>
           ))}
-          <button className="btn ghost sm" onClick={addRow} style={{ marginTop: '0.25rem' }}>+ Add recipient</button>
-          <div className={'split-total ' + (valid ? 'ok' : 'bad')}><span>{!walletsOk ? 'Every recipient needs a valid 0x address' : valid ? 'Splits balanced' : (totalPct > 100 ? 'Over by ' + (totalPct - 100).toFixed(1) + '%' : 'Remaining ' + (100 - totalPct).toFixed(1) + '%')}</span><span>{totalPct.toFixed(1)}% <span className="bps">· {totalBps} / 10000 bps</span></span></div>
+          <button className="btn ghost sm" onClick={addRow} disabled={splits.length >= MAX_PAYOUTS} style={{ marginTop: '0.25rem', opacity: splits.length >= MAX_PAYOUTS ? 0.4 : 1 }}>+ Add recipient</button>
+          <div className={'split-total ' + (valid ? 'ok' : 'bad')}><span>{!countOk ? `Up to ${MAX_PAYOUTS} recipients` : !walletsOk ? 'Every recipient needs a valid 0x address' : valid ? 'Splits balanced' : (totalPct > 100 ? 'Over by ' + (totalPct - 100).toFixed(1) + '%' : 'Remaining ' + (100 - totalPct).toFixed(1) + '%')}</span><span>{totalPct.toFixed(1)}% <span className="bps">· {totalBps} / 10000 bps</span></span></div>
+          <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)', marginTop: '0.5rem' }}>
+            {splits.length} of {MAX_PAYOUTS} recipients used. Payments to #{handle.name} are divided and fanned out atomically in one transaction.
+          </div>
         </div>
+
+        <div className="card pad-lg">
+          <div className="eyebrow" style={{ marginBottom: '0.75rem' }}>Profile</div>
+          <h2 style={{ fontSize: '1.1rem', fontWeight: 500, marginBottom: '0.75rem' }}>Public metadata</h2>
+          <div className="form-row">
+            <label className="field-label">Display name</label>
+            <input className="input" value={profile.name} maxLength={MAX_NAME_LEN} onChange={(e) => setProfile({ ...profile, name: e.target.value })} placeholder={handle.name} />
+          </div>
+          <div className="form-row">
+            <label className="field-label">Avatar image URL</label>
+            <input className="input mono" value={profile.imageUrl} maxLength={MAX_URL_LEN} onChange={(e) => setProfile({ ...profile, imageUrl: e.target.value })} placeholder="https://…" spellCheck="false" />
+          </div>
+          <div className="form-row">
+            <label className="field-label">Website</label>
+            <input className="input mono" value={profile.websiteUrl} maxLength={MAX_URL_LEN} onChange={(e) => setProfile({ ...profile, websiteUrl: e.target.value })} placeholder="https://…" spellCheck="false" />
+          </div>
+          <div className="form-row">
+            <label className="field-label">Bio</label>
+            <textarea className="input" rows={3} maxLength={MAX_SOCIAL_VAL} value={socials[BIO_KEY] || ''} onChange={(e) => setSocials({ ...socials, [BIO_KEY]: e.target.value })} placeholder="What this handle is for" style={{ resize: 'vertical', width: '100%' }} />
+            <div style={{ fontSize: '0.72rem', color: 'var(--ink-faint)', marginTop: '0.25rem' }}>{(socials[BIO_KEY] || '').length}/{MAX_SOCIAL_VAL}</div>
+          </div>
+          {profile.imageUrl && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginTop: '0.25rem' }}>
+              <img src={profile.imageUrl} alt="" onError={(e) => { e.currentTarget.style.visibility = 'hidden' }} style={{ width: '2.5rem', height: '2.5rem', borderRadius: '50%', objectFit: 'cover', background: 'var(--paper-deep)' }} />
+              <span style={{ fontSize: '0.8rem', color: 'var(--ink-faint)' }}>Avatar preview</span>
+            </div>
+          )}
+        </div>
+
         <div className="card pad-lg">
           <div className="eyebrow" style={{ marginBottom: '0.75rem' }}>Identity</div>
           <h2 style={{ fontSize: '1.1rem', fontWeight: 500, marginBottom: '0.5rem' }}>Social handles</h2>
           {SOCIAL_KEYS.map(([k, l]) => (
             <div className="social-row" key={k}>
-              <div className="left"><span className="ic">{l[0]}</span><input value={socials[k]} onChange={(e) => setSocials({ ...socials, [k]: e.target.value })} placeholder={'Add ' + l} /></div>
+              <div className="left"><span className="ic">{l[0]}</span><input value={socials[k]} maxLength={MAX_SOCIAL_VAL} onChange={(e) => setSocials({ ...socials, [k]: e.target.value })} placeholder={'Add ' + l} /></div>
               {handle.socials[k] && socials[k] === handle.socials[k] && <span className="pill ok">{I.check}Onchain</span>}
             </div>
           ))}
@@ -364,76 +499,21 @@ function Resolver({ handle, toast, onSaved }) {
           <div className="route-line"><span style={{ color: 'var(--ink-soft)' }}>Resolves to</span><span>{splits.length} recipient{splits.length > 1 ? 's' : ''}</span></div>
           <div className="route-line"><span style={{ color: 'var(--ink-soft)' }}>Settles in</span><b>ETH (native)</b></div>
         </div>
-        <button className="btn" disabled={!valid || !dirty || save.status === 'busy'} onClick={doSave} style={{ justifyContent: 'center' }}>{save.status === 'busy' ? 'Confirm in wallet…' : !dirty ? 'Everything saved onchain' : valid ? 'Save resolver config onchain' : 'Fix splits to save'}<span className="circ">{I.chevron}</span></button>
+        <button className="btn" disabled={!valid || !profileOk || !dirty || save.status === 'busy'} onClick={doSave} style={{ justifyContent: 'center' }}>{save.status === 'busy' ? 'Confirm in wallet…' : !dirty ? 'Everything saved onchain' : !profileOk ? 'Shorten the profile fields to save' : valid ? 'Save resolver config onchain' : 'Fix splits to save'}<span className="circ">{I.chevron}</span></button>
         {save.status === 'error' && <div className="split-total bad">{save.message}</div>}
       </div>
     </div>
   )
 }
+// Module 6 lives in UniversalSend: one recipient box that accepts a #hashtag,
+// an @handle, or a base58 Solana address and routes each down the path the
+// spec's execution matrix assigns it. The previous version here was
+// hashtag-only and paid in native ETH through wagmi, which no longer matches
+// the product's Solana-first execution model.
 function Send({ toast }) {
-  const [to, setTo] = useState('')
-  const [amount, setAmount] = useState('')
-  const [resolved, setResolved] = useState(null)
-  const [resolving, setResolving] = useState(false)
-  const [pay, setPay] = useState({ status: 'idle' })
-  const norm = to.replace(/^[#@]+/, '').toLowerCase().trim()
-  const amt = parseFloat(amount) || 0
-  const resolve = async () => {
-    setResolving(true)
-    try {
-      const r = await resolveHashtag({ data: norm })
-      setResolved(r || { error: '#' + norm + ' is not registered (or has expired) on Robinhood Chain' })
-    } catch {
-      setResolved({ error: 'Resolution failed — check your connection and try again' })
-    } finally {
-      setResolving(false)
-    }
-  }
-  const sendOnchain = async () => {
-    setPay({ status: 'busy' })
-    try {
-      await payOnchain({ hashtag: resolved.hashtag, amountEth: String(amt) })
-      setPay({ status: 'done' })
-      toast(`Sent ${fmt(amt)} ETH to #${resolved.hashtag}`)
-    } catch (e) {
-      setPay({ status: 'error', message: friendlyError(e) })
-    }
-  }
-  useEffect(() => { setResolved(null); setPay({ status: 'idle' }) }, [to, amount])
   return (
     <div className="grid two fade-in" style={{ alignItems: 'start' }}>
-      <div className="card pad-lg">
-        <div className="eyebrow" style={{ marginBottom: '0.75rem' }}>Pay by name</div>
-        <div className="form-row">
-          <label className="field-label">To</label>
-          <div style={{ border: '1px solid var(--hairline)', borderRadius: 'var(--radius-sm)', padding: '0.35rem 0.35rem 0.35rem 0.9rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: 'var(--green)', fontSize: '1.1rem' }}>#</span>
-            <input value={to.replace(/^[#@]/, '')} onChange={(e) => setTo(e.target.value)} placeholder="handle" spellCheck="false" style={{ flex: 1, border: 'none', outline: 'none', fontSize: '1rem', background: 'none' }} />
-          </div>
-          <div style={{ fontSize: '0.78rem', color: 'var(--ink-faint)', marginTop: '0.4rem' }}>Any registered hashtag resolves to its live onchain routing.</div>
-        </div>
-        <div className="form-row">
-          <label className="field-label" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><TokenIcon symbol="ETH" size="1rem" /> Amount (native ETH)</label>
-          <input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-        </div>
-        <button className="btn" disabled={!NAME_RE.test(norm) || amt <= 0 || resolving} onClick={resolve} style={{ justifyContent: 'center', width: '100%' }}>{resolving ? 'Resolving…' : 'Resolve'} <span className="circ">{I.chevron}</span></button>
-        {resolved && resolved.error && (<div className="split-total bad" style={{ marginTop: '1rem' }}>{resolved.error}</div>)}
-        {resolved && !resolved.error && (
-          <div className="send-preview">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}><span className="eyebrow">Resolved · live</span><span className="pill ok"><span className="dot"></span>#{resolved.hashtag}</span></div>
-            <div className="route-line"><div className="who"><b>Primary destination</b></div><span className="addr-mono">{short(resolved.primaryDestination)}</span></div>
-            {resolved.payouts.map((p, i) => (
-              <div className="route-line" key={i}><div className="who"><b>Recipient {i + 1}</b><span className="addr-mono">{short(p.wallet)}</span></div><span className="amt">{fmt(amt * p.percentage_bps / 10000)} ETH <span style={{ color: 'var(--ink-faint)', fontWeight: 400, fontSize: '0.8rem' }}>· {(p.percentage_bps / 100).toFixed(1)}%</span></span></div>
-            ))}
-            {pay.status !== 'done' && (
-              <button className="btn" disabled={pay.status === 'busy'} onClick={sendOnchain} style={{ justifyContent: 'center', width: '100%', marginTop: '1rem' }}>{pay.status === 'busy' ? 'Confirm in wallet…' : `Send ${fmt(amt)} ETH onchain`}<span className="circ">{I.check}</span></button>
-            )}
-            {pay.status === 'error' && (<div className="split-total bad" style={{ marginTop: '0.75rem' }}>{pay.message}</div>)}
-            {pay.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Payment settled onchain</div>)}
-            <Link className="btn ghost" to="/h/$name" params={{ name: resolved.hashtag }} style={{ justifyContent: 'center', width: '100%', marginTop: '0.75rem' }}>View #{resolved.hashtag} record <span className="circ">{I.chevron}</span></Link>
-          </div>
-        )}
-      </div>
+      <UniversalSend toast={toast} />
       <WalletPanel />
     </div>
   )
@@ -444,22 +524,30 @@ function fmtBalance(b) {
 }
 
 function WalletPanel() {
-  const { address, isConnected } = useAccount()
+  // Solana is the user-facing chain (spec: "Executed on Solana, Settled on
+  // Robinhood"), so this panel reads the Solana wallet and its balances. It
+  // used to render the Solana address from WalletControl above a list of EVM
+  // balances fetched for a different address entirely, which read as though
+  // the Solana wallet held them.
+  const { publicKey } = useWallet()
+  const { connection } = useConnection()
+  const isConnected = Boolean(publicKey)
   // Sign-in itself is triggered automatically at the Dashboard level (see
   // AuthGate) the moment a wallet connects -- this panel just reflects the
   // outcome, it never triggers anything itself.
   const signedIn = Boolean(getAuthToken())
 
-  const balancesQuery = useQuery({
-    queryKey: ['wallet-balances', address],
-    enabled: Boolean(address),
-    queryFn: () => getWalletBalances({ data: { address } }),
-    refetchInterval: 30000,
-  })
-  const balances = balancesQuery.data || []
-  // ETH/USDG always shown for context; stocks only when actually held, so
-  // this doesn't turn into a wall of zero-balance tickers.
-  const shown = balances.filter((b) => b.native || b.symbol === 'USDG' || BigInt(b.balance) > 0n)
+  // The xStocks directory gives held equities a ticker and an icon; without it
+  // the panel could only ever name SOL and USDC, so a wallet holding AAPLx
+  // looked empty beyond its base currencies (spec Module 2 + 7).
+  const tokensQuery = useQuery({ queryKey: ['swap-tokens'], queryFn: () => getSwapTokens(), staleTime: 60 * 60 * 1000 })
+  const directory = tokensQuery.data?.allStocks ?? []
+  const iconByMint = new Map(directory.map((t) => [t.mint, t.iconUrl]))
+
+  const { balances, loading: balancesLoading } = useSolanaBalances(connection, publicKey, directory)
+  // SOL/USDC always shown for context; anything else only when actually held,
+  // so this doesn't turn into a wall of zero-balance tickers.
+  const shown = balances.filter((b) => b.native || b.symbol === 'USDC' || BigInt(b.balance) > 0n)
 
   return (
     <div className="card pad-lg">
@@ -471,14 +559,14 @@ function WalletPanel() {
           </div>
           {signedIn && <div style={{ fontSize: '0.8rem', color: 'var(--green-deep)' }}>Signed in to TagioPay ✓</div>}
           <div style={{ width: '100%', marginTop: '0.25rem' }}>
-            <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Your assets on Robinhood</div>
-            {balancesQuery.isLoading ? (
+            <div className="eyebrow" style={{ marginBottom: '0.5rem' }}>Your assets on Solana</div>
+            {balancesLoading ? (
               <p style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>Loading balances…</p>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%' }}>
                 {shown.map((b) => (
-                  <div key={b.symbol} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                    <TokenIcon symbol={b.symbol} />
+                  <div key={b.mint} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
+                    <SolanaTokenIcon symbol={b.symbol} iconUrl={iconByMint.get(b.mint)} />
                     <span style={{ fontSize: '0.85rem', color: 'var(--ink)' }}>{b.symbol}</span>
                     <span style={{ marginLeft: 'auto', fontSize: '0.85rem', color: 'var(--ink-soft)' }} className="mono">{fmtBalance(b)}</span>
                   </div>
@@ -536,121 +624,13 @@ function AuthGate({ status, error, onRetry }) {
     </div>
   )
 }
+// Module 7 lives in XStocks. The old implementation signed /swap/plan as an
+// EVM {approvals, swap} pair; that endpoint now returns Relay Solana steps for
+// any SOL/USDC <-> xStock pair, so it had to move to the Solana signer.
 function Trade({ toast }) {
-  const { address } = useAccount()
-  const [tokens, setTokens] = useState({ swapIn: [], stocks: [] })
-  const [direction, setDirection] = useState('buy') // 'buy' | 'sell'
-  const [currency, setCurrency] = useState('USDG')
-  const [stock, setStock] = useState('')
-  const [amount, setAmount] = useState('')
-  const [quote, setQuote] = useState(null)
-  const [quoting, setQuoting] = useState(false)
-  const [trade, setTrade] = useState({ status: 'idle' }) // idle | planning | approving | signing | done | error
-
-  useEffect(() => { getSwapTokens().then(setTokens).catch(() => {}) }, [])
-  useEffect(() => { if (tokens.stocks.length > 0 && !stock) setStock(tokens.stocks[0].symbol) }, [tokens, stock])
-  useEffect(() => { setQuote(null); setTrade({ status: 'idle' }) }, [direction, currency, stock, amount])
-
-  const fromSymbol = direction === 'buy' ? currency : stock
-  const toSymbol = direction === 'buy' ? stock : currency
-  const amt = parseFloat(amount) || 0
-  // abs(), not just > 3: on a very thin pool the reference (1-unit) quote
-  // itself can be distorted enough to swing priceImpactPct sharply negative
-  // (confirmed live -- a thin TSLA pool briefly quoted -762%) rather than
-  // near zero. That's not "a great deal," it's the metric breaking down on
-  // low depth -- exactly the situation this warning exists to catch.
-  const highImpact = quote && Math.abs(quote.priceImpactPct) > 3
-
-  const getQuote = async () => {
-    setQuoting(true)
-    try {
-      const q = await getSwapQuote({ data: { fromSymbol, toSymbol, amountIn: amt } })
-      setQuote(q || { error: true })
-    } catch (e) {
-      toast(friendlyError(e))
-    } finally {
-      setQuoting(false)
-    }
-  }
-
-  const doSwap = async () => {
-    setTrade({ status: 'planning' })
-    try {
-      const plan = await getSwapPlan({ data: { fromSymbol, toSymbol, amountIn: amt, walletAddress: address } })
-      if (!plan) {
-        setTrade({ status: 'error', message: 'No liquidity route for this pair yet' })
-        return
-      }
-      setTrade({ status: plan.approvals.length > 0 ? 'approving' : 'signing' })
-      await signAndConfirmSwapPlan(plan)
-      setTrade({ status: 'done' })
-      toast(`Swapped ${fmt(amt)} ${fromSymbol} for ${toSymbol}`)
-    } catch (e) {
-      setTrade({ status: 'error', message: friendlyError(e) })
-    }
-  }
-
-  const busy = trade.status === 'planning' || trade.status === 'approving' || trade.status === 'signing'
-  const tradeLabel =
-    trade.status === 'planning' ? 'Building trade…'
-    : trade.status === 'approving' ? 'Confirm approval in wallet…'
-    : trade.status === 'signing' ? 'Confirm swap in wallet…'
-    : 'Swap'
-
   return (
     <div className="grid two fade-in" style={{ alignItems: 'start' }}>
-      <div className="card pad-lg">
-        <div className="eyebrow" style={{ marginBottom: '0.75rem' }}>Trade RWA stocks</div>
-        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-          <button className={'btn sm' + (direction === 'buy' ? '' : ' ghost')} onClick={() => setDirection('buy')}>Buy</button>
-          <button className={'btn sm' + (direction === 'sell' ? '' : ' ghost')} onClick={() => setDirection('sell')}>Sell</button>
-        </div>
-        <div className="form-row">
-          <label className="field-label">{direction === 'buy' ? 'Pay with' : 'Receive'}</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <TokenIcon symbol={currency} />
-            <select className="input" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-              <option value="ETH">ETH</option>
-              <option value="USDG">USDG</option>
-            </select>
-          </div>
-        </div>
-        <div className="form-row">
-          <label className="field-label">{direction === 'buy' ? 'Buy' : 'Sell'}</label>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <TokenIcon symbol={stock} />
-            <select className="input" value={stock} onChange={(e) => setStock(e.target.value)}>
-              {tokens.stocks.map((t) => <option key={t.symbol} value={t.symbol}>{t.symbol}</option>)}
-            </select>
-          </div>
-        </div>
-        <div className="form-row">
-          <label className="field-label">Amount ({fromSymbol || '...'})</label>
-          <input className="input mono" type="number" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" />
-        </div>
-        <button className="btn" disabled={amt <= 0 || !stock || quoting} onClick={getQuote} style={{ justifyContent: 'center', width: '100%' }}>
-          {quoting ? 'Getting quote…' : 'Get quote'} <span className="circ">{I.chevron}</span>
-        </button>
-        {quote && quote.error && (<div className="split-total bad" style={{ marginTop: '1rem' }}>No liquidity route for this pair yet.</div>)}
-        {quote && !quote.error && (
-          <div className="send-preview">
-            <div className="route-line"><div className="who"><b>You'll receive</b></div><span className="amt" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}><TokenIcon symbol={toSymbol} size="1rem" /> ≈ {fmt(Number(quote.amountOut))} {toSymbol}</span></div>
-            <div className="route-line"><div className="who"><b>Route</b></div><span style={{ fontSize: '0.85rem', color: 'var(--ink-faint)' }}>{quote.route}</span></div>
-            {highImpact && (
-              <div className="split-total bad" style={{ marginTop: '0.5rem' }}>
-                High price impact (~{Math.abs(quote.priceImpactPct).toFixed(2)}%) — this pool has limited liquidity, the actual fill may differ from this quote.
-              </div>
-            )}
-            {trade.status !== 'done' && (
-              <button className="btn" disabled={busy} onClick={doSwap} style={{ justifyContent: 'center', width: '100%', marginTop: '1rem' }}>
-                {tradeLabel}<span className="circ">{I.check}</span>
-              </button>
-            )}
-            {trade.status === 'error' && (<div className="split-total bad" style={{ marginTop: '0.75rem' }}>{trade.message}</div>)}
-            {trade.status === 'done' && (<div className="split-total ok" style={{ marginTop: '0.75rem' }}>Swap settled onchain</div>)}
-          </div>
-        )}
-      </div>
+      <XStocks toast={toast} />
       <WalletPanel />
     </div>
   )
@@ -706,6 +686,10 @@ function Activity() {
     </div>
   )
 }
+
+// uint256 strings from the API are parsed defensively wherever the result is
+// used during render -- a throw there is a blank page, not a bad number.
+const bigOr0 = (v) => { try { return BigInt(v ?? 0) } catch { return 0n } }
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 const causeToken = (c) => (c.token?.toLowerCase() === ZERO_ADDRESS ? 'native' : 'usdg')
@@ -1407,15 +1391,22 @@ function PendingNudge({ rows, notifPerm, onComplete, onDismiss, onEnableAlerts }
   )
 }
 
+// Views backed by Robinhood-side state, which is keyed to an EVM address:
+// handle ownership (the NFT), SimpleEscrow, and PrivateSendPool rows. Every
+// other view is Solana-native and handles its own wallet prompt.
+const EVM_GATED_VIEWS = new Set(['overview', 'handles', 'resolver', 'escrow', 'psend'])
+
 const ROUTES = [
   { id: 'overview', label: 'Overview', icon: I.grid },
   { id: 'handles', label: 'Handles', icon: I.hash },
   { id: 'resolver', label: 'Resolver', icon: I.split },
   { id: 'send', label: 'Send', icon: I.send },
-  { id: 'trade', label: 'Trade', icon: I.trade },
+  { id: 'trade', label: 'xStocks', icon: I.trade },
   { id: 'causes', label: 'Causes', icon: I.heart },
   { id: 'escrow', label: 'Escrow', icon: I.shield },
   { id: 'psend', label: 'Private Send', icon: I.lock },
+  { id: 'airdrops', label: 'Airdrops', icon: I.bolt },
+  { id: 'recovery', label: 'Recovery', icon: I.key },
   { id: 'pending', label: 'Pending', icon: I.clock },
   { id: 'activity', label: 'Activity', icon: I.act },
   { id: 'x-commands', label: 'X commands', icon: I.terminal, to: '/x-commands-list' },
@@ -1436,6 +1427,9 @@ export default function Dashboard() {
     return () => { document.documentElement.style.fontSize = '' }
   }, [])
 
+  const { publicKey: solPublicKey, signMessage: solSignMessage } = useWallet()
+  const solAddress = solPublicKey?.toBase58()
+
   // Auth gate: the moment a wallet is connected (including an auto-reconnect
   // on page load), automatically run the two-step wallet+X sign-in -- no
   // manual button. 'idle' -> no wallet connected yet. 'checking' covers both
@@ -1449,9 +1443,16 @@ export default function Dashboard() {
   const [authStatus, setAuthStatus] = useState(() => (getLiveAuthToken() ? 'signed_in' : 'idle'))
   const [authError, setAuthError] = useState('')
   const [authAttempt, setAuthAttempt] = useState(0)
+  // The linked X handle for the active-user pill (spec Module 2). Sign-in
+  // already returns it; it was simply being thrown away. Seeded from the JWT so
+  // it survives a reload that short-circuits straight to 'signed_in'.
+  const [xHandle, setXHandle] = useState(() => getCachedXHandle())
 
+  // Identity is the Solana wallet: it signs an ed25519 message which the
+  // backend verifies via tweetnacl (verifyWalletSignature already branches on
+  // isSolanaAddress). The EVM wallet is no longer part of signing in.
   useEffect(() => {
-    if (!address) { setAuthStatus('idle'); return }
+    if (!solPublicKey || !solSignMessage) { setAuthStatus('idle'); return }
     // getLiveAuthToken (not getAuthToken) so an expired token falls through to a
     // fresh sign-in here instead of short-circuiting into 'signed_in'.
     if (getLiveAuthToken()) { setAuthStatus('signed_in'); return }
@@ -1459,9 +1460,10 @@ export default function Dashboard() {
     let cancelled = false
     setAuthStatus('checking')
     setAuthError('')
-    signInWithWallet()
+    signInWithSolana(solPublicKey, solSignMessage)
       .then((result) => {
         if (cancelled) return
+        if (result.status === 'signed_in' && result.xHandle) setXHandle(result.xHandle)
         setAuthStatus(result.status === 'signed_in' ? 'signed_in' : 'redirecting')
       })
       .catch((err) => {
@@ -1470,13 +1472,23 @@ export default function Dashboard() {
         setAuthError(friendlyError(err))
       })
     return () => { cancelled = true }
-  }, [address, authAttempt])
+  }, [solAddress, authAttempt])
 
+  // Ownership now comes from the indexer's own reverse lookup (GET
+  // /hashtags?owner=), so a handle registered on another device shows up here
+  // too -- the localStorage list is kept only as a supplement for a handle
+  // registered seconds ago that the indexer hasn't caught yet. The list
+  // endpoint returns bare hashtag rows, so each name is still hydrated through
+  // /hashtags/:name for its payouts and socials.
   const handlesQuery = useQuery({
     queryKey: ['owned-handles', address],
     enabled: Boolean(address),
     queryFn: async () => {
-      const names = loadTracked(address)
+      const [owned, tracked] = await Promise.all([
+        getHashtagsByOwner({ data: address }).catch(() => []),
+        Promise.resolve(loadTracked(address)),
+      ])
+      const names = Array.from(new Set([...owned.map((r) => r.hashtag), ...tracked]))
       const records = await Promise.all(names.map((n) => getHashtag({ data: n }).catch(() => null)))
       return records.filter((r) => r && r.active && r.owner_wallet?.toLowerCase() === address.toLowerCase())
     },
@@ -1496,6 +1508,32 @@ export default function Dashboard() {
   })
   const activity = activityQuery.data || []
 
+  // Spec Module 2's "active escrows & open causes count". Both are Robinhood
+  // -side reads keyed to the EVM address, so they stay undefined (rendered as
+  // "—") rather than 0 when no EVM wallet is connected -- zero would read as
+  // "you have none", which isn't what we know.
+  const overviewEscrowsQuery = useQuery({
+    queryKey: ['escrows', address],
+    queryFn: () => getEscrows({ data: address }),
+    enabled: Boolean(address),
+  })
+  const overviewCausesQuery = useQuery({ queryKey: ['causes'], queryFn: getCauses })
+  const overviewCounts = {
+    escrows: overviewEscrowsQuery.data
+      ? overviewEscrowsQuery.data.filter((e) => e.status === 'Created' || e.status === 'Accepted' || e.status === 'Delivered').length
+      : undefined,
+    // bigOr0 rather than a bare BigInt(): these are uint256 strings straight
+    // from the API, and a single malformed one would throw *during render* of
+    // the default view, taking the whole dashboard to the error boundary over a
+    // stat tile. A cause with goal 0 is open-ended, so it counts as open.
+    causes: overviewCausesQuery.data
+      ? overviewCausesQuery.data.filter((c) => {
+          const goal = bigOr0(c.goal)
+          return goal === 0n || bigOr0(c.totalRaised) < goal
+        }).length
+      : undefined,
+  }
+
   const go = (r) => { setView(r); setDrawer(false) }
   const toast = (msg) => { const id = Date.now() + Math.random(); setToasts((t) => [...t, { id, msg }]); setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3200) }
 
@@ -1503,9 +1541,14 @@ export default function Dashboard() {
   // sign/dismiss implementation, so they can never show conflicting state.
   // Polls on its own so a request created by the bot/DApp while the
   // dashboard's already open shows up (badge + modal) without a refresh.
+  // Keyed and gated on the *Solana* wallet, not the EVM one: the endpoint
+  // authenticates off the JWT, and that JWT is minted for whichever address
+  // signed in -- which is the Solana key. Gating on `address` meant a
+  // Phantom-only user (the spec's whole target) never fetched their pending
+  // requests at all, and the tab sat empty rather than unauthenticated.
   const pendingQuery = useQuery({
-    queryKey: ['pending-transactions', address],
-    enabled: Boolean(address) && authStatus === 'signed_in',
+    queryKey: ['pending-transactions', solAddress],
+    enabled: Boolean(solAddress) && authStatus === 'signed_in',
     queryFn: () => getPendingTransactions({ data: { token: getLiveAuthToken() } }),
     refetchInterval: 20000,
   })
@@ -1657,8 +1700,10 @@ export default function Dashboard() {
     overview: ['Overview', 'Your name-native money at a glance'],
     handles: ['Handles', 'The names you own on Robinhood Chain'],
     resolver: ['Resolver', handle ? `Routing & identity for #${handle.name}` : 'Routing & identity'],
-    send: ['Send', 'Pay anyone by their handle'],
-    trade: ['Trade', 'Swap ETH/USDG for tokenized RWA stocks'],
+    send: ['Send', 'One box — a #handle, an @X user, or a Solana address'],
+    trade: ['xStocks', 'Swap SOL or USDC for tokenized US equities, natively on Solana'],
+    airdrops: ['Airdrops', 'Mass giveaways and airdrops, dispersed in a single transaction'],
+    recovery: ['Recovery', 'Restore a handle to a new wallet with its recovery phrase'],
     causes: ['Causes', 'Public, transparent donations with on-chain receipts'],
     escrow: ['Escrow', 'Create -> Accept -> Deliver -> Release, for freelance and any bilateral deal'],
     psend: ['Private Send', "Shields your identity from the recipient -- their wallet only ever sees TagioPay's pool, never yours"],
@@ -1682,7 +1727,7 @@ export default function Dashboard() {
             )
           )}</nav>
           <div className="side-spacer"></div>
-          <div className="net-chip"><span className="live"></span>Robinhood Chain · L2</div>
+          <div className="net-chip"><span className="live"></span>Solana Mainnet</div>
           <WalletControl variant="chip" />
         </aside>
         <main className="main">
@@ -1693,15 +1738,35 @@ export default function Dashboard() {
             </div>
             <div className="actions">
               {view === 'resolver' && handles.length > 0 && (<div className="handle-select"><span style={{ color: 'var(--green)' }}>#</span><select value={handle?.name || ''} onChange={(e) => setSelected(e.target.value)}>{handles.map((h) => <option key={h.name} value={h.name}>{h.name}</option>)}</select></div>)}
+              {/* Spec Module 2's active-user pill: the connected Solana key,
+                  its linked X handle, and the network it's executing on. */}
+              {solAddress && (
+                <div className="user-pill">
+                  <span className="net-dot" aria-hidden="true"></span>
+                  <span className="addr-mono">{solAddress.slice(0, 4)}…{solAddress.slice(-4)}</span>
+                  {xHandle && (
+                    <a href={`https://x.com/${xHandle}`} target="_blank" rel="noreferrer" className="x-badge">
+                      <img src="/x.png" alt="" />@{xHandle}
+                    </a>
+                  )}
+                  <span className="net-name">Solana</span>
+                </div>
+              )}
               <button className="btn" onClick={() => go('handles')}>Claim handle <span className="circ">{I.chevron}</span></button>
             </div>
           </div>
           <div className="content">
-            {!address && view !== 'send' && view !== 'trade' && view !== 'activity' && view !== 'causes' ? (
+            {/* Views that run entirely on Solana carry their own connect
+                prompts, so they must not be gated on an EVM wallet -- doing so
+                hid the whole Solana-native half of the product from exactly the
+                Phantom/Solflare user the spec targets. Only the views that read
+                or write Robinhood-side state (handle ownership, escrows,
+                private sends) still need `address`. */}
+            {!address && EVM_GATED_VIEWS.has(view) ? (
               <ConnectPrompt />
             ) : (
               <>
-                {view === 'overview' && <Overview handles={handles} activity={activity} loading={handlesQuery.isLoading} go={go} manage={manage} renew={renew} renewing={renewing} />}
+                {view === 'overview' && <Overview handles={handles} activity={activity} loading={handlesQuery.isLoading} go={go} manage={manage} renew={renew} renewing={renewing} escrowCount={overviewCounts.escrows} causeCount={overviewCounts.causes} />}
                 {view === 'handles' && <Handles handles={handles} loading={handlesQuery.isLoading} manage={manage} renew={renew} renewing={renewing} toast={toast} refresh={refresh} />}
                 {view === 'resolver' && (handle
                   ? <Resolver key={handle.name} handle={handle} toast={toast} onSaved={refresh} />
@@ -1716,6 +1781,8 @@ export default function Dashboard() {
                 {view === 'causes' && <Causes toast={toast} />}
                 {view === 'escrow' && <Escrow toast={toast} />}
                 {view === 'psend' && <PrivateSend toast={toast} />}
+                {view === 'airdrops' && <Airdrops toast={toast} pendingRows={pendingRows} onGoToPending={() => go('pending')} />}
+                {view === 'recovery' && <Recovery toast={toast} evmAddress={address} />}
                 {view === 'activity' && <Activity />}
               </>
             )}

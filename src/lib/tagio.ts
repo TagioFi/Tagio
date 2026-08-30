@@ -51,7 +51,10 @@ export interface AvailabilityResult {
 
 export const HASHTAG_RE = /^[a-z0-9_]{3,32}$/;
 export const normalizeHashtag = (raw: string) =>
-  raw.trim().replace(/^[#@]+/, "").toLowerCase();
+  raw
+    .trim()
+    .replace(/^[#@]+/, "")
+    .toLowerCase();
 
 const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 
@@ -59,9 +62,7 @@ const TX_HASH_RE = /^0x[0-9a-fA-F]{64}$/;
 
 function apiUrl(path: string) {
   const base =
-    import.meta.env.VITE_API_URL ||
-    process.env.VITE_API_URL ||
-    "https://api.tagiopay.com";
+    import.meta.env.VITE_API_URL || process.env.VITE_API_URL || "https://api.tagiopay.com";
   return base.replace(/\/+$/, "") + path;
 }
 
@@ -70,17 +71,25 @@ function apiUrl(path: string) {
 // two apart -- otherwise a dead session reads as "the server said you have
 // nothing", which is exactly how an expired token used to blank the dashboard's
 // Pending tab. One exported string so the throw site and every check agree.
-export const SESSION_EXPIRED_MESSAGE = "Your TagioPay session expired — reconnect your wallet to continue.";
+export const SESSION_EXPIRED_MESSAGE =
+  "Your TagioPay session expired — reconnect your wallet to continue.";
 
 // Matched on the message rather than an error subclass on purpose: these throws
 // originate inside a server function, so what the client catches is a
 // re-created Error, not the instance thrown on the server.
 export function isSessionExpiredError(err: unknown): boolean {
-  const message = err instanceof Error ? err.message : String((err as { message?: unknown })?.message ?? err ?? "");
+  const message =
+    err instanceof Error
+      ? err.message
+      : String((err as { message?: unknown })?.message ?? err ?? "");
   return message.includes(SESSION_EXPIRED_MESSAGE);
 }
 
-async function apiFetch(path: string, init?: RequestInit, okStatuses: number[] = [404]): Promise<Response> {
+async function apiFetch(
+  path: string,
+  init?: RequestInit,
+  okStatuses: number[] = [404],
+): Promise<Response> {
   const res = await fetch(apiUrl(path), {
     ...init,
     headers: { accept: "application/json", ...(init?.headers ?? {}) },
@@ -130,11 +139,27 @@ export const resolveHashtag = createServerFn({ method: "GET" })
 export const getHashtagTransactions = createServerFn({ method: "GET" })
   .validator((name: string) => normalizeHashtag(name))
   .handler(async ({ data: name }): Promise<HashtagTransaction[]> => {
-    const res = await apiFetch(
-      `/transactions/hashtag?hashtag=${encodeURIComponent(name)}`,
-    );
+    const res = await apiFetch(`/transactions/hashtag?hashtag=${encodeURIComponent(name)}`);
     if (res.status === 404) return [];
     return (await res.json()) as HashtagTransaction[];
+  });
+
+// Reverse lookup: which handles does this wallet own? The NFT isn't
+// enumerable, so this is the indexer's answer rather than an onchain one.
+// Owner is the Robinhood-side address that registered the handle, so this only
+// accepts an EVM address — a base58 Solana key 400s here by design.
+export const getHashtagsByOwner = createServerFn({ method: "GET" })
+  .validator((owner: string) => owner.trim())
+  .handler(async ({ data: owner }): Promise<HashtagRecord[]> => {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(owner)) return [];
+    const res = await apiFetch(
+      `/hashtags?owner=${encodeURIComponent(owner)}`,
+      undefined,
+      [400, 404],
+    );
+    if (!res.ok) return [];
+    const rows = (await res.json()) as HashtagRecord[];
+    return Array.isArray(rows) ? rows : [];
   });
 
 export const confirmTransaction = createServerFn({ method: "POST" })
@@ -166,9 +191,7 @@ export type SignInResult =
   | { needsXLink: true; authorizeUrl: string };
 
 export const signIn = createServerFn({ method: "POST" })
-  .validator(
-    (input: { walletAddress: string; signature: string; message: string }) => input,
-  )
+  .validator((input: { walletAddress: string; signature: string; message: string }) => input)
   .handler(async ({ data }): Promise<SignInResult> => {
     const res = await apiFetch("/auth/signin", {
       method: "POST",
@@ -251,7 +274,7 @@ export const cancelPendingTransaction = createServerFn({ method: "POST" })
     return (await res.json()) as { cancelled: boolean };
   });
 
-/* ---------- RWA stock trading (ETH/USDG <-> tokenized equities via Uniswap) ---------- */
+/* ---------- xStocks trading (SOL/USDC <-> tokenized equities on Solana) ---------- */
 
 export interface TokenInfo {
   symbol: string;
@@ -260,28 +283,120 @@ export interface TokenInfo {
   decimals: number;
 }
 
+/** Shape of the Solana entries GET /tokens returns (backend rwaTokens.ts). */
+export interface SolanaTokenInfo {
+  slug?: string;
+  symbol: string;
+  name: string;
+  mint: string;
+  decimals: number;
+  isNative?: boolean;
+  isBaseCurrency?: boolean;
+  underlyingTicker?: string;
+  iconUrl?: string;
+}
+
 export interface SwapTokenList {
-  swapIn: TokenInfo[]; // ETH, USDG
-  stocks: TokenInfo[]; // curated RWA allowlist
+  /** SOL and USDC — the only two working currencies, per the spec. */
+  swapIn: SolanaTokenInfo[];
+  /** Curated featured xStocks. */
+  stocks: SolanaTokenInfo[];
+  /** The full 714+ xStocks directory (spec Module 7). */
+  allStocks: SolanaTokenInfo[];
+  /** Preserved Robinhood-side EVM token set; unused by the Solana UI. */
+  robinhood?: { swapIn: TokenInfo[]; stocks: TokenInfo[] };
 }
 
+// One shape covering both backends: the Solana path (Relay/Jupiter) returns
+// `routing` + `rate`, the legacy Robinhood path returns `route` + `decimalsOut`.
+// Callers read through `swapRouteLabel` rather than picking a field themselves.
 export interface SwapQuote {
+  amountIn?: string;
   amountOut: string;
-  decimalsOut: number;
+  decimalsOut?: number;
   priceImpactPct: number;
-  route: string;
+  rate?: string;
+  route?: string;
+  routing?: { type: string; pool: string };
 }
 
-export interface SwapPlan {
+export const swapRouteLabel = (quote: SwapQuote): string =>
+  quote.routing ? `${quote.routing.pool} · ${quote.routing.type}` : (quote.route ?? "—");
+
+/* ---------- Relay step payloads ---------- */
+
+// Spelled out concretely rather than left as `unknown`: these cross a server
+// function boundary, and TanStack validates that every returned type is
+// serializable — an `unknown[]` is rejected outright.
+export interface RelayAccountMeta {
+  pubkey: string;
+  isSigner: boolean;
+  isWritable: boolean;
+}
+
+export interface RelayInstructionJson {
+  /** Relay has been observed using either key for the account list. */
+  keys?: RelayAccountMeta[];
+  accounts?: RelayAccountMeta[];
+  programId: string;
+  /** base64 (usual), hex, or a raw byte array. */
+  data: string | number[];
+}
+
+export interface RelayStepItem {
+  status?: string;
+  data?: {
+    instructions?: RelayInstructionJson[];
+    addressLookupTableAddresses?: string[];
+  };
+}
+
+export interface RelayStep {
+  id?: string;
+  action?: string;
+  description?: string;
+  kind?: string;
+  requestId?: string;
+  items?: RelayStepItem[];
+}
+
+/** POST /swap/plan on a Solana pair — Relay steps to sign with the wallet. */
+export interface SolanaSwapPlan {
+  type: "relay_solana";
+  requestId: string;
+  steps: RelayStep[];
+  // Relay's own nested quote metadata; passed straight through to the UI and
+  // never narrowed here, so it stays `any` rather than a fragile mirror.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  details?: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fees?: any;
+}
+
+/** POST /swap/plan on the legacy Robinhood pair — unsigned EVM transactions. */
+export interface EvmSwapPlan {
   approvals: UnsignedTx[];
   swap: UnsignedTx;
   quote: SwapQuote;
 }
 
+export type SwapPlan = SolanaSwapPlan | EvmSwapPlan;
+
+export const isSolanaSwapPlan = (plan: SwapPlan): plan is SolanaSwapPlan =>
+  (plan as SolanaSwapPlan)?.type === "relay_solana";
+
 export const getSwapTokens = createServerFn({ method: "GET" }).handler(
   async (): Promise<SwapTokenList> => {
     const res = await apiFetch("/tokens");
-    return (await res.json()) as SwapTokenList;
+    const list = (await res.json()) as Partial<SwapTokenList>;
+    // Older deployments of the API predate `allStocks`; fall back to the
+    // featured set so the directory renders something rather than nothing.
+    return {
+      swapIn: list.swapIn ?? [],
+      stocks: list.stocks ?? [],
+      allStocks: list.allStocks ?? list.stocks ?? [],
+      robinhood: list.robinhood,
+    };
   },
 );
 
@@ -292,12 +407,19 @@ export const getSwapTokens = createServerFn({ method: "GET" }).handler(
 export const getSwapQuote = createServerFn({ method: "POST" })
   .validator((input: { fromSymbol: string; toSymbol: string; amountIn: number }) => input)
   .handler(async ({ data }): Promise<SwapQuote | null> => {
+    // 404 is what the API actually returns for "no liquidity route found for
+    // this pair"; 422 is kept alongside it so an older deployment still reads
+    // as "no route" rather than throwing.
     const res = await apiFetch(
       "/swap/quote",
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) },
-      [422],
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      },
+      [404, 422],
     );
-    if (res.status === 422) return null;
+    if (res.status === 404 || res.status === 422) return null;
     return (await res.json()) as SwapQuote;
   });
 
@@ -307,14 +429,21 @@ export const getSwapQuote = createServerFn({ method: "POST" })
 // baked into the swap reflects the current pool state as closely as
 // possible right before signing.
 export const getSwapPlan = createServerFn({ method: "POST" })
-  .validator((input: { fromSymbol: string; toSymbol: string; amountIn: number; walletAddress: string }) => input)
+  .validator(
+    (input: { fromSymbol: string; toSymbol: string; amountIn: number; walletAddress: string }) =>
+      input,
+  )
   .handler(async ({ data }): Promise<SwapPlan | null> => {
     const res = await apiFetch(
       "/swap/plan",
-      { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) },
-      [422],
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(data),
+      },
+      [404, 422],
     );
-    if (res.status === 422) return null;
+    if (res.status === 404 || res.status === 422) return null;
     return (await res.json()) as SwapPlan;
   });
 
@@ -371,6 +500,14 @@ export const getCauses = createServerFn({ method: "GET" }).handler(async (): Pro
   const res = await apiFetch("/causes");
   return (await res.json()) as Cause[];
 });
+
+export const getCause = createServerFn({ method: "GET" })
+  .validator((causeId: number) => causeId)
+  .handler(async ({ data: causeId }): Promise<Cause | null> => {
+    const res = await apiFetch(`/causes/${causeId}`);
+    if (res.status === 404) return null;
+    return (await res.json()) as Cause;
+  });
 
 export const getCauseLeaderboard = createServerFn({ method: "GET" })
   .validator((causeId: number) => causeId)
@@ -439,12 +576,19 @@ export const getPrivateSends = createServerFn({ method: "GET" })
 // #hashtag, or a raw 0x wallet address -- same three kinds a plain send
 // accepts, disambiguated server-side by prefix.
 export const createPrivateSend = createServerFn({ method: "POST" })
-  .validator((input: { token: string; recipient: string; amount: string; sendToken: "native" | "usdg" }) => input)
+  .validator(
+    (input: { token: string; recipient: string; amount: string; sendToken: "native" | "usdg" }) =>
+      input,
+  )
   .handler(async ({ data }): Promise<{ created: boolean; id: number }> => {
     const res = await apiFetch("/private-sends", {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${data.token}` },
-      body: JSON.stringify({ recipient: data.recipient, amount: data.amount, token: data.sendToken }),
+      body: JSON.stringify({
+        recipient: data.recipient,
+        amount: data.amount,
+        token: data.sendToken,
+      }),
     });
     return (await res.json()) as { created: boolean; id: number };
   });
@@ -471,10 +615,40 @@ export interface RelayQuoteRequest {
   amount: string;
   recipient?: string;
   txs?: Array<{ to: `0x${string}`; data: `0x${string}`; value: string }>;
+  originChainId?: number;
+  destinationChainId?: number;
+  tradeType?: "EXACT_INPUT" | "EXACT_OUTPUT";
 }
+
+/** GET /hashtags/user/:handle — is this X account linked to a wallet yet? */
+export interface XAccountLookup {
+  handle: string;
+  linked: boolean;
+  wallet: string | null;
+  /** Present only when they can receive a direct Solana transfer. */
+  solanaWallet: string | null;
+  hashtags: { hashtag: string; name: string | null; total_volume_usd: number }[];
+}
+
+export const getXAccount = createServerFn({ method: "GET" })
+  .validator((handle: string) => handle.trim().replace(/^@+/, "").toLowerCase())
+  .handler(async ({ data: handle }): Promise<XAccountLookup | null> => {
+    if (!/^[a-z0-9_]{1,15}$/.test(handle)) return null;
+    const res = await apiFetch(
+      `/hashtags/user/${encodeURIComponent(handle)}`,
+      undefined,
+      [400, 404],
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as XAccountLookup;
+  });
 
 export const getRelayQuote = createServerFn({ method: "POST" })
   .validator((input: RelayQuoteRequest) => input)
+  // Relay's quote is a large, evolving nested document (steps, fees, details,
+  // route). Callers narrow the parts they use (RelayQuoteLike, RelayStep);
+  // mirroring the whole thing here would just be a shape that goes stale.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   .handler(async ({ data }): Promise<any> => {
     const res = await apiFetch("/relay/quote", {
       method: "POST",
@@ -486,8 +660,8 @@ export const getRelayQuote = createServerFn({ method: "POST" })
 
 export const getRelayIntentStatus = createServerFn({ method: "GET" })
   .validator((requestId: string) => requestId)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   .handler(async ({ data: requestId }): Promise<any> => {
     const res = await apiFetch(`/relay/intent/${encodeURIComponent(requestId)}`);
     return await res.json();
   });
-

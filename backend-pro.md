@@ -1,4 +1,17 @@
-# Backend issue: `x_accounts` duplicate key on X account linking
+# Backend issues & recent API changes
+
+Two open backend issues, then the API changes that landed alongside the Solana frontend
+work so you know what moved and why.
+
+| # | Issue | Status |
+| :-- | :-- | :-- |
+| 1 | `x_accounts` duplicate key on X account linking | open |
+| 2 | Solana-authenticated `walletAddress` used where an EVM address is required | open |
+| — | API changes landed frontend-side (§A–C) | done, FYI |
+
+---
+
+# Issue 1 — `x_accounts` duplicate key on X account linking
 
 **Reported error**
 
@@ -8,6 +21,9 @@
 
 This is a backend bug. Two separate problems are stacked in it: the upsert is keyed on
 the wrong column, and the raw Postgres error is being returned to the client.
+
+*(Still present as of this writing — `linkXAccount()` continues to use
+`ON CONFLICT (wallet_address)`.)*
 
 ---
 
@@ -114,23 +130,183 @@ information disclosure.
 
 ---
 
-## Frontend context (FYI, no action needed from you)
+# Issue 2 — Solana `walletAddress` from the JWT used where an EVM address is required
 
-The frontend is mid-migration from Robinhood Chain to Solana, and it is currently the
-lagging half:
+Same root cause as Issue 1, surfacing somewhere with teeth. `issueJwt()` mints the token
+for **whichever address signed in**, and Solana sign-in is now the primary path — so
+`req.walletAddress` is frequently a base58 key. Several places treat it as EVM by
+assertion rather than by check.
 
-- **Your side is ahead.** `backend/src/routes/auth.ts` → `verifyWalletSignature()`
-  already branches on `isSolanaAddress` and verifies ed25519 via tweetnacl/bs58, with a
-  viem `verifyMessage` fallback for EVM. Solana sign-in works server-side today.
-- **The frontend cannot follow yet.** All 8 contracts in `contracts/src/` are still
-  Solidity, `src/lib/chain.ts` holds viem ABIs and five `0x` addresses, and
-  `src/lib/resolver-actions.ts` runs 14 exported actions over ~27 wagmi calls against
-  chain id 4663. Until there are Anchor programs to call, the app still needs an EVM
-  wallet for every transaction.
-- **Consequence for you:** users will keep arriving with *both* address types for a
-  while. That is precisely the situation in §2, so it is worth fixing the upsert before
-  the Solana rollout widens rather than after.
+## 2.1 The cast
 
-Marketing copy on the site now says Solana. In-app strings that describe live behaviour
-(`0x` address validation, the network chip, "not registered on …") were deliberately
-left EVM-accurate so the UI does not claim a network it is not transacting on.
+`backend/src/routes/privateSends.ts`, two places:
+
+```ts
+// line 113 — POST /private-sends
+const senderWallet = req.walletAddress as `0x${string}`;
+
+// line ~189 — POST /private-sends/:id/claim
+buildUnsignedClaim(row.commitment, req.walletAddress as `0x${string}`, row.secret)
+```
+
+`as` is an assertion, not a conversion. For a Solana-authenticated caller both are
+base58 strings wearing an EVM type.
+
+## 2.2 Symptom A — a Solana user's own private sends are invisible to them
+
+`senderWallet` is not used in calldata (`preparePrivateSend` builds the commitment from
+`recipientWallet` only), so nothing mis-sends. It is persisted to
+`private_sends.sender_wallet`.
+
+But the list endpoint rejects anything that isn't EVM:
+
+```ts
+// GET /private-sends
+if (!wallet || !/^0x[a-fA-F0-9]{40}$/.test(wallet)) return 400;
+```
+
+and `listPrivateSendsForWallet()` matches on `sender_wallet` / `recipient_wallet`. A row
+filed under a base58 sender can therefore never be returned to the person who created
+it — the dashboard's "Sent by you" group is permanently empty for Solana users.
+
+## 2.3 Symptom B — the manual claim fallback 500s
+
+This one does reach calldata:
+
+```ts
+export function buildUnsignedClaim(commitment, recipientWallet: `0x${string}`, secret) {
+  const data = encodeFunctionData({
+    abi: privateSendPoolAbi, functionName: "claim",
+    args: [commitment, recipientWallet, secret],   // <- `address` parameter
+  });
+```
+
+viem validates `address` arguments, so a base58 string raises `InvalidAddressError`
+inside the route rather than producing a bad transaction. Failing loudly is the good
+outcome here, but the effect is that **`POST /private-sends/:id/claim` is broken for any
+Solana-authenticated recipient** — the keeper sweep still works, the manual "claim now"
+fallback does not.
+
+There is a second, quieter hazard behind it: the commitment is
+`computeCommitment(secret, recipientWallet)` and the contract checks the claim's
+`recipient` against it. Passing the *caller's* address assumes caller ==
+`row.recipient_wallet`. Once the address types are reconciled, that assumption should be
+made explicit — claim with `row.recipient_wallet` after authorising the caller, rather
+than substituting the caller's own address for it.
+
+## 2.4 Suggested fix
+
+`getLinkedXAccountByWallet(req.walletAddress)` is already called on both paths, and the
+row it returns carries `evmWalletAddress`. So the Robinhood-side address is in hand:
+
+```ts
+const senderWallet = sender.evmWalletAddress ?? sender.walletAddress;
+```
+
+with a `409` when no EVM address is linked yet, since a Robinhood-settled private send
+genuinely cannot proceed without one.
+
+Worth deciding deliberately rather than patching: **which identity `sender_wallet` is
+meant to hold.** It is a Robinhood-side column (`PrivateSendPool` lives on chain 13746),
+so the EVM address is the consistent answer — but the frontend queries it with whatever
+address the user has connected, so both halves have to agree. A general
+`requireEvmWallet(req)` helper would close the whole class of these rather than the two
+call sites above; `resolveTargetWallet()` and `/wallet/:address/*` have the same
+EVM-only assumption.
+
+Left unfixed pending that decision: it is value-adjacent code, and guessing at the
+intended identity would be worse than asking.
+
+---
+
+# Recent API changes (landed, no action needed)
+
+Three backend changes went in with the Solana frontend work.
+
+## A. New — `GET /hashtags/user/:handle`
+
+Specified in `FRONTEND-INTEGRATION.md` Module 6 but never implemented. The send box
+needs it to tell "they'll get this instantly" from "this has to sit in ClaimEscrow until
+they link an account".
+
+```jsonc
+// 200
+{
+  "handle": "jack",
+  "linked": true,
+  "wallet": "0x…",          // whichever wallet linked first
+  "solanaWallet": "9xQe…",  // null when they can't receive a direct Solana transfer
+  "hashtags": [{ "hashtag": "…", "name": "…", "total_volume_usd": 0 }]
+}
+```
+
+Unlinked handles return `linked: false` with nulls rather than a 404, so the caller can
+distinguish "no such link yet" from "lookup failed". Registered above `/hashtags/:name`
+so the literal `user` segment isn't swallowed by the wildcard. Exposes nothing the bot's
+own public replies don't already reveal.
+
+Ownership reverse-lookup deliberately uses `evmWalletAddress ?? walletAddress`, since
+`hashtags.owner_wallet` is Robinhood-side — the same distinction Issue 2 is about.
+
+## B. `POST /relay/quote` now forwards `originChainId`, `destinationChainId`, `tradeType`
+
+`fetchRelayQuote()` already accepted all three; the route destructured only five fields
+and silently dropped them.
+
+The frontend needs this to price a **payable** Robinhood call. `receivePayment` and
+`donate` need a `msg.value` denominated in destination-chain ETH, but the user enters an
+amount in SOL or USDC — so the value cannot be encoded until the bridge has been priced.
+The flow is now: quote the plain bridge to `ROBINHOOD_CHAIN_ID` to read
+`details.currencyOut.amount`, then re-quote with that value encoded into `txs`.
+
+**Open question for you:** the two quotes are moments apart, so the executed value can
+drift from the quoted one. If the delivered amount lands *under* the encoded
+`msg.value`, the destination call reverts and the user takes a refund round-trip. Whether
+Relay's own fill slippage already absorbs that, or whether we should encode a small
+haircut, needs one real transaction to settle — we deliberately did **not** guess, since
+a haircut applied on top of handling Relay already does would silently short every
+recipient.
+
+## C. `GetQuoteParams.destinationCurrency` is now optional
+
+It was typed required but the route passed it through possibly-`undefined`, and Relay
+rejects a quote with `destinationCurrency: undefined`. It now defaults to the
+destination chain's native currency — `SOL_MINT` on Solana, the zero address on an EVM
+chain — which is what a contract call wants anyway.
+
+---
+
+## Frontend context
+
+Superseding the note that used to sit here: **the frontend is no longer the lagging
+half.** It now executes on Solana and settles on Robinhood through Relay, per the
+execution matrix in `FRONTEND-INTEGRATION.md` §3.
+
+- Direct sends (SOL/USDC to a base58 address) and all xStocks trading are pure Solana —
+  the wallet signs Solana instructions, no EVM wallet involved.
+- Contract calls go out as Relay intents built in `src/lib/relay-actions.ts`.
+
+One constraint is worth knowing, because it shapes what can ever move to Relay:
+
+> Relay executes `txs` from its **solver's multicaller**, so on the Robinhood side
+> `msg.sender` is the solver, never the user.
+
+Verified against `contracts/src/HashtagResolver.sol`, that splits the surface in two:
+
+| Relay-safe (value-only, or beneficiary named explicitly) | Sender-bound (reads `msg.sender` for ownership) |
+| :-- | :-- |
+| `renewSubscription` — contract comment: *"Callable by anyone"* | `registerHashtag` — `nftContract.mint(msg.sender, …)`, so the NFT would mint **to the solver** |
+| `receivePayment` — distributes to the payout table | `updatePayouts` / `updateMetadata` — `onlyHashtagOwner`, would revert `NotOwner` |
+| `transferViaRecoveryPhrase` — authorises on the phrase, takes `newOwner` as an argument | the whole `SimpleEscrow` lifecycle, `CauseRegistry.withdraw` |
+| `ClaimEscrow.deposit*`, `CauseRegistry.donate`, `PrivateSendPool.send` | |
+
+Only the left column is routed through Relay. The right column still runs against the
+user's own Robinhood wallet — `RELAY_SAFE_CALLS` in `src/lib/chain.ts` plus an
+`assertRelaySafe()` guard make that boundary a runtime error rather than a comment
+someone can drift past. **No contract change is requested here**; it is recorded so the
+constraint isn't rediscovered later, and so nobody "helpfully" routes a registration
+through Relay and mints handles to a solver.
+
+Contracts remain Solidity on chain 4663; there are no Anchor programs, which is why
+handle ownership and the escrow/cause lifecycles are still EVM-addressed — and why
+Issue 2 matters.

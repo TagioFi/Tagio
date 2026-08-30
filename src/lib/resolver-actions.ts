@@ -3,10 +3,8 @@ import {
   ContractFunctionRevertedError,
   UserRejectedRequestError,
   erc20Abi,
-  keccak256,
   parseEther,
   parseUnits,
-  stringToBytes,
   zeroAddress,
   zeroHash,
   type Hash,
@@ -33,6 +31,7 @@ import {
   USDG_DECIMALS,
 } from "./chain";
 import { normalizeHashtag, confirmTransaction } from "./tagio";
+import { recoveryHash } from "./recovery";
 import { wagmiConfig } from "./wagmi";
 
 /** Connects the injected wallet if needed and makes sure it's on Robinhood Chain. */
@@ -43,8 +42,7 @@ export async function ensureWallet(): Promise<`0x${string}`> {
     // (browser-extension) one can be connected without going through the modal.
     const connectors = getConnectors(wagmiConfig);
     const connector = connectors.find((c) => c.type === "injected") ?? connectors[0];
-    if (!connector)
-      throw new Error("No wallet found — use the Connect wallet button first");
+    if (!connector) throw new Error("No wallet found — use the Connect wallet button first");
     await connect(wagmiConfig, { connector });
     account = getAccount(wagmiConfig);
   }
@@ -137,7 +135,13 @@ export async function registerOnchain(input: {
       "",
       "",
       [],
-      input.recoveryPhrase ? keccak256(stringToBytes(input.recoveryPhrase)) : zeroHash,
+      // Must go through recoveryHash(), which canonicalizes whitespace and case
+      // before hashing. transferViaRecoveryPhrase submits the canonicalized
+      // phrase, and the contract compares keccak256 of what it's given against
+      // what was stored here -- so if this side hashed the raw string instead,
+      // any phrase that wasn't already canonical would commit a hash recovery
+      // could never reproduce, permanently stranding the handle.
+      input.recoveryPhrase ? recoveryHash(input.recoveryPhrase) : zeroHash,
     ],
     value,
     chainId: robinhoodChain.id,
@@ -165,10 +169,7 @@ export async function renewOnchain(input: { hashtag: string }): Promise<Hash> {
 }
 
 /** Native payment — receivePayment is always available regardless of settlementToken. */
-export async function payOnchain(input: {
-  hashtag: string;
-  amountEth: string;
-}): Promise<Hash> {
+export async function payOnchain(input: { hashtag: string; amountEth: string }): Promise<Hash> {
   const hashtag = normalizeHashtag(input.hashtag);
   await ensureWallet();
   const hash = await writeContract(wagmiConfig, {
@@ -362,7 +363,12 @@ export async function createEscrowOnchain(input: {
 }
 
 async function callEscrow(
-  functionName: "accept" | "cancelBeforeAccept" | "release" | "forceRelease" | "refundAfterDeliverDeadline",
+  functionName:
+    | "accept"
+    | "cancelBeforeAccept"
+    | "release"
+    | "forceRelease"
+    | "refundAfterDeliverDeadline",
   escrowId: number,
 ): Promise<Hash> {
   await ensureWallet();
@@ -381,9 +387,13 @@ export const acceptEscrowOnchain = (escrowId: number) => callEscrow("accept", es
 export const cancelEscrowOnchain = (escrowId: number) => callEscrow("cancelBeforeAccept", escrowId);
 export const releaseEscrowOnchain = (escrowId: number) => callEscrow("release", escrowId);
 export const forceReleaseEscrowOnchain = (escrowId: number) => callEscrow("forceRelease", escrowId);
-export const refundEscrowOnchain = (escrowId: number) => callEscrow("refundAfterDeliverDeadline", escrowId);
+export const refundEscrowOnchain = (escrowId: number) =>
+  callEscrow("refundAfterDeliverDeadline", escrowId);
 
-export async function deliverEscrowOnchain(input: { escrowId: number; proofUrl: string }): Promise<Hash> {
+export async function deliverEscrowOnchain(input: {
+  escrowId: number;
+  proofUrl: string;
+}): Promise<Hash> {
   await ensureWallet();
   const hash = await writeContract(wagmiConfig, {
     abi: simpleEscrowAbi,

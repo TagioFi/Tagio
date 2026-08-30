@@ -2,6 +2,7 @@ import { Router } from "express";
 import { pool } from "../db/pool";
 import { normalizeHashtag, isValidHashtag } from "../services/hashtagValidation";
 import { confirmTransaction } from "../services/hashtagService";
+import { getLinkedXAccountByHandle, isSolanaAddress } from "../services/x/xAccountService";
 import type { Hash } from "viem";
 
 const router = Router();
@@ -40,6 +41,52 @@ router.get("/hashtags", async (req, res, next) => {
       [owner],
     );
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Spec Module 6: does this X handle have a wallet linked yet? Drives the
+// send box's "they'll get it instantly" vs "this will sit in ClaimEscrow
+// until they link their X account" branch. Exposes nothing that isn't
+// already public — the bot's own replies reveal the same linkage.
+router.get("/hashtags/user/:handle", async (req, res, next) => {
+  try {
+    const handle = req.params.handle.replace(/^@+/, "").trim().toLowerCase();
+    if (!/^[a-z0-9_]{1,15}$/.test(handle)) {
+      res.status(400).json({ error: "invalid X handle" });
+      return;
+    }
+
+    const account = await getLinkedXAccountByHandle(handle);
+    if (!account) {
+      res.json({ handle, linked: false, wallet: null, solanaWallet: null, hashtags: [] });
+      return;
+    }
+
+    // Hashtag ownership is recorded against the Robinhood-side address, so the
+    // reverse lookup has to use that one, not whichever wallet linked first.
+    const evmWallet = account.evmWalletAddress ?? account.walletAddress;
+    const solanaWallet =
+      account.solanaWalletAddress ??
+      (isSolanaAddress(account.walletAddress) ? account.walletAddress : null);
+
+    const { rows } = await pool.query(
+      `SELECT hashtag, name, total_volume_usd FROM hashtags
+       WHERE LOWER(owner_wallet) = LOWER($1) AND active = true
+       ORDER BY total_volume_usd DESC LIMIT 5`,
+      [evmWallet],
+    );
+
+    res.json({
+      handle: account.xHandle,
+      linked: true,
+      wallet: account.walletAddress,
+      // Present means a plain Solana transfer reaches them directly; absent
+      // means a send has to go to ClaimEscrow until they link a Solana wallet.
+      solanaWallet,
+      hashtags: rows,
+    });
   } catch (err) {
     next(err);
   }

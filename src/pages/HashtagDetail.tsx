@@ -7,6 +7,38 @@ import {
 } from "../lib/tagio";
 import { friendlyError, renewOnchain } from "../lib/resolver-actions";
 import { WalletControl } from "../components/WalletControl";
+import { HashtagPayWidget } from "../components/dashboard/HashtagPayWidget";
+
+// `bio` is stored as a social link because the contract has no bio field —
+// see the Resolver editor in Dashboard.jsx, which writes it the same way.
+const BIO_KEY = "bio";
+
+const SOCIAL_LABELS: Record<string, string> = {
+  x: "X",
+  twitter: "X",
+  telegram: "Telegram",
+  discord: "Discord",
+  github: "GitHub",
+  email: "Email",
+};
+
+const socialHref = (key: string, value: string): string | null => {
+  const handle = value.replace(/^@/, "");
+  switch (key) {
+    case "x":
+    case "twitter":
+      return `https://x.com/${handle}`;
+    case "telegram":
+      return `https://t.me/${handle}`;
+    case "github":
+      return `https://github.com/${handle}`;
+    case "email":
+      return `mailto:${value}`;
+    // Discord handles aren't addressable by URL, so the badge stays plain text.
+    default:
+      return null;
+  }
+};
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SUBSCRIPTION_MS = 30 * DAY_MS;
@@ -199,22 +231,41 @@ export default function HashtagDetail({
   }, []);
 
   const exp = expiryStatus(record);
+  const bio = record.socials.find((s) => s.key === BIO_KEY)?.value ?? "";
+  const badges = record.socials.filter((s) => s.key !== BIO_KEY && s.value);
 
   return (
     <div id="app">
       <div style={{ maxWidth: "70rem", margin: "0 auto", padding: "2rem 1.5rem 4rem" }}>
         <div className="topbar" style={{ padding: "0 0 1.25rem" }}>
-          <div className="title">
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
-              <h1>
-                <span style={{ color: "var(--green-mid)" }}>#</span>
-                {record.hashtag}
-              </h1>
-              <span className={"pill " + (exp.kind === "ok" ? "ok" : "warn")}>
-                {exp.pill}
-              </span>
+          <div className="title" style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+            {record.image_url && (
+              <img
+                src={record.image_url}
+                alt=""
+                onError={(e) => {
+                  e.currentTarget.style.display = "none";
+                }}
+                style={{
+                  width: "3.5rem",
+                  height: "3.5rem",
+                  borderRadius: "50%",
+                  objectFit: "cover",
+                  background: "var(--paper-deep)",
+                  flex: "none",
+                }}
+              />
+            )}
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+                <h1>
+                  <span style={{ color: "var(--green-mid)" }}>#</span>
+                  {record.hashtag}
+                </h1>
+                <span className={"pill " + (exp.kind === "ok" ? "ok" : "warn")}>{exp.pill}</span>
+              </div>
+              <p>{record.name || "Onchain hashtag record · Robinhood Chain"}</p>
             </div>
-            <p>{record.name || "Onchain hashtag record · Robinhood Chain"}</p>
           </div>
           <div className="actions">
             <WalletControl />
@@ -223,6 +274,43 @@ export default function HashtagDetail({
             </Link>
           </div>
         </div>
+
+        {(bio || badges.length > 0) && (
+          <div className="card pad-lg" style={{ marginBottom: "1rem" }}>
+            {bio && (
+              <p style={{ fontSize: "0.95rem", color: "var(--ink-soft)", lineHeight: 1.6 }}>{bio}</p>
+            )}
+            {badges.length > 0 && (
+              <div className="badge-row" style={{ marginTop: bio ? "0.9rem" : 0 }}>
+                {badges.map((s) => {
+                  const label = SOCIAL_LABELS[s.key] ?? s.key;
+                  const href = socialHref(s.key, s.value);
+                  const inner = (
+                    <>
+                      <b>{label}</b>
+                      <span>{s.value}</span>
+                    </>
+                  );
+                  return href ? (
+                    <a
+                      key={s.key}
+                      className="social-badge"
+                      href={href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {inner}
+                    </a>
+                  ) : (
+                    <span key={s.key} className="social-badge">
+                      {inner}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid two" style={{ alignItems: "start" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -246,6 +334,12 @@ export default function HashtagDetail({
                 <span style={{ color: "var(--ink-soft)" }}>Total volume</span>
                 <span className="amt">
                   ${Number(record.total_volume_usd ?? 0).toLocaleString("en-US")}
+                </span>
+              </div>
+              <div className="route-line">
+                <span style={{ color: "var(--ink-soft)" }}>Active splits</span>
+                <span>
+                  {record.payouts.length || 1} recipient{(record.payouts.length || 1) === 1 ? "" : "s"}
                 </span>
               </div>
               {record.website_url && (
@@ -306,25 +400,16 @@ export default function HashtagDetail({
               ))}
             </div>
 
-            <div className="card pad-lg">
-              <div className="eyebrow" style={{ marginBottom: "0.75rem" }}>
-                Socials
-              </div>
-              {record.socials.length === 0 && (
-                <p style={{ fontSize: "0.9rem", color: "var(--ink-faint)" }}>
-                  No social links attached to this hashtag.
-                </p>
-              )}
-              {record.socials.map((s, i) => (
-                <div className="route-line" key={i}>
-                  <b style={{ fontWeight: 500, textTransform: "capitalize" }}>{s.key}</b>
-                  <span>{s.value}</span>
-                </div>
-              ))}
-            </div>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+            <HashtagPayWidget
+              hashtag={record.hashtag}
+              displayName={record.name}
+              payouts={record.payouts}
+              active={record.active && Date.now() < new Date(record.expires_at).getTime()}
+            />
+
             <div className="card pad-lg">
               <div className="section-title">
                 <h2>Payments</h2>

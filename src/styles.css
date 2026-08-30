@@ -739,3 +739,45 @@ html{ scroll-behavior:smooth; }
 .pill-btn.soon:hover .circle{ transform:none; }
 .footer .col .soon-link{ display:block; font-size:0.9375rem; color:var(--ink-faint); margin-bottom:0.625rem; cursor:default; }
 .footer .col .soon-tag{ display:inline-block; margin-top:0.35rem; font-size:0.625rem; text-transform:uppercase; letter-spacing:var(--track); color:var(--ink); background:var(--acid); border-radius:0.2rem; padding:0.15rem 0.4rem; }
+
+/* ============ ACTIVE USER PILL (spec Module 2) ============ */
+/* Connected Solana key + linked X handle + network, in the dashboard topbar. */
+#app .user-pill{
+  display:flex; align-items:center; gap:0.5rem;
+  padding:0.4rem 0.7rem; border:1px solid var(--hairline);
+  border-radius:9999px; background:var(--card); font-size:0.8rem; white-space:nowrap;
+}
+#app .user-pill .net-dot{
+  width:0.45rem; height:0.45rem; border-radius:9999px; background:var(--green-mid);
+  box-shadow:0 0 0 0.18rem rgba(169,205,43,0.22); flex:none;
+}
+#app .user-pill .net-name{ color:var(--ink-faint); font-size:0.72rem; letter-spacing:0.04em; text-transform:uppercase; }
+#app .user-pill .x-badge{
+  display:inline-flex; align-items:center; gap:0.3rem;
+  padding:0.15rem 0.45rem; border-radius:9999px;
+  background:rgba(200,232,96,0.18); color:var(--green-deep); font-size:0.75rem;
+}
+#app .user-pill .x-badge img{ width:0.8rem; height:0.8rem; border-radius:0.15rem; }
+@media (max-width:900px){ #app .user-pill{ display:none; } }
+
+/* ============ PAY WIDGET / QR (spec Module 4) ============ */
+#app .pay-widget{ display:flex; flex-direction:column; gap:0.75rem; }
+#app .qr-frame{
+  align-self:center; padding:0.7rem; background:#fff;
+  border:1px solid var(--hairline); border-radius:var(--radius);
+}
+#app .pay-uri{
+  font-size:0.7rem; color:var(--ink-faint); word-break:break-all;
+  background:var(--paper-deep); padding:0.5rem 0.6rem; border-radius:var(--radius-sm);
+}
+#app .currency-toggle{ display:flex; gap:0.4rem; }
+
+/* Verified social badges on the public profile. */
+#app .badge-row{ display:flex; flex-wrap:wrap; gap:0.4rem; }
+#app .social-badge{
+  display:inline-flex; align-items:center; gap:0.35rem;
+  padding:0.25rem 0.6rem; border-radius:9999px;
+  border:1px solid var(--hairline); background:var(--card);
+  font-size:0.78rem; color:var(--ink-soft);
+}
+#app .social-badge b{ font-weight:500; color:var(--ink); }
