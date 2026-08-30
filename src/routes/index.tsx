@@ -1,37 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
+import Home from "../pages/Home.jsx";
 
 export const Route = createFileRoute("/")({
-  component: HomeComponent,
+  head: () => ({
+    meta: [
+      { title: "Tagio — Send money to a name, not an address" },
+      { name: "description", content: "Claim your #handle on Solana. Payments resolve, split, and settle in under a second." },
+      { property: "og:title", content: "Tagio — Send money to a name, not an address" },
+      { property: "og:description", content: "Claim your #handle on Solana. Payments resolve, split, and settle in under a second." },
+      { property: "og:image", content: "/og.jpg" },
+      { name: "twitter:image", content: "/og.jpg" },
+    ],
+  }),
+  component: Index,
 });
 
-function HomeComponent() {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: "#04170d",
-        color: "#c8e860",
-        fontFamily: "system-ui, -apple-system, sans-serif",
-        gap: "1.25rem",
-      }}
-    >
-      <img
-        src="/logo.png"
-        alt="Tagio Logo"
-        style={{
-          width: "80px",
-          height: "80px",
-          borderRadius: "16px",
-          objectFit: "contain",
-        }}
-      />
-      <h1 style={{ fontSize: "2.5rem", fontWeight: "bold", margin: 0 }}>
-        hello world Tagio
-      </h1>
-    </div>
-  );
+function Index() {
+  return <Home />;
 }
