@@ -10,7 +10,7 @@
 
 * **Target Ecosystem**: Solana (Fast confirmations, low fees, standard Solana wallet adapters).
 * **Working Currencies**: Strictly **`SOL`** (9 decimals) and **`USDC`** (6 decimals).
-* **Tokenized Stocks (xStocks)**: 714+ asset-backed US equities & ETFs (Apple, Tesla, NVIDIA, Google, S&P 500) trading natively as Solana SPL tokens (see [`backend/src/lib/rwaTokens.ts`](file:///home/skipp/Documents/gigs/qpay/tagiopay/backend/src/lib/rwaTokens.ts)).
+* **Tokenized Stocks (xStocks)**: 714+ asset-backed US equities & ETFs (Apple, Tesla, NVIDIA, Google, S&P 500) trading natively on Solana (see [`backend/src/lib/rwaTokens.ts`](file:///home/skipp/Documents/gigs/qpay/tagiopay/backend/src/lib/rwaTokens.ts)).
 * **Cross-Chain Intent Layer**: **Relay.link** bridges Solana user transactions to Robinhood Chain smart contracts with an automatic **0.15% (15 bps) protocol fee**.
 * **Branding Guidelines**: Position TagioPay as an ultra-fast, user-friendly Solana product. Emphasize that programmable rules and namespace ownership settle securely on Robinhood Chain in the background.
 
@@ -53,18 +53,16 @@ Authorization: Bearer <JWT_TOKEN>
                                         └────────────────────────┘
 ```
 
-| Feature / Action | Execution Path | Asset / Currency | Details & Routing |
+### Relay-Safe vs Sender-Bound Execution
+Because Relay executes destination transactions through its **solver's multicaller contract**, `msg.sender` on the Robinhood side is the solver contract, not the user. The contract interactions are separated as follows:
+
+| Category | Functions / Actions | Execution Path | Details |
 | :--- | :--- | :--- | :--- |
-| **1. Direct Send** | Pure Solana Transfer | SOL / USDC | Native `SystemProgram.transfer` or SPL Token transfer to base58 Solana address. Instant, no bridge/Relay fee. |
-| **2. Stock Trading (xStocks)** | Pure Solana DEX (Jupiter) | SOL/USDC ↔ `AAPLx`, `TSLAx` | Direct Solana SPL swap to the respective xStock mint address. Instant settlement, no bridge/Relay fee. |
-| **3. Hashtag Send (`#handle`)** | Relay.link Intent Quote | SOL / USDC | Bridges to `HashtagResolver.receivePayment()` on Robinhood Chain with **0.15% fee** for onchain percentage fan-out splits. |
-| **4. Register / Renew Handle** | Relay.link Intent Quote | SOL / USDC | Bridges to `HashtagResolver.registerHashtag()` / `renewSubscription()` with **0.15% fee**; mints `HashtagNFT`. |
-| **5. Unlinked `@handle` Deposit** | Relay.link Intent Quote | SOL / USDC | Deposits to `ClaimEscrow` with **0.15% fee** until recipient links their X account. |
-| **6. Configure Payout Splits** | Relay.link Intent Quote | — | Calls `HashtagResolver.updatePayouts()` to update destination percentages onchain. |
-| **7. Freelance Escrow** | Relay.link Intent Quote | SOL / USDC | Locks funds in `SimpleEscrow` with **0.15% fee**; released upon project milestone delivery. |
-| **8. Causes & Donations** | Relay.link Intent Quote | SOL / USDC | Deposits to `CauseRegistry` with **0.15% fee**; updates verified donor totals and leaderboards. |
-| **9. Private Send (`$psend`)** | Relay.link Intent Quote | SOL / USDC | Locks funds into `PrivateSendPool` with secret commitment and **0.15% fee**; auto-claimed by backend keeper. |
-| **10. Mass Airdrops / Giveaways** | Relay.link Intent Quote | SOL / USDC | Batch disperses funds via `BatchDisperser` to hundreds of recipients with **0.15% fee**. |
+| **Pure Solana** | Direct Sends (`SOL`, `USDC`) | Direct Solana Transfer | Native `SystemProgram.transfer` or SPL transfer. No bridge or Relay fee. |
+| **Relay Same-Chain** | Tokenized Stock Trading (`AAPLx`, `TSLAx`) | Relay Quote (Solana $\rightarrow$ Solana) | Routes via Jupiter on Solana with **0.15% app fee** auto-collected. |
+| **Relay Cross-Chain** | `#hashtag` Payments (`receivePayment`), Renewals (`renewSubscription`), Donations (`CauseRegistry.donate`), Unlinked Deposits (`ClaimEscrow.deposit`) | Relay Quote (Solana $\rightarrow$ Robinhood) | Bridges SOL/USDC to Robinhood with **0.15% fee** and executes contract call. |
+| **Recovery / Keyed** | Account Recovery (`transferViaRecoveryPhrase`) | Relay Quote / Direct Execution | Authorizes on cryptographic hash commitment and assigns explicit `newOwner`. |
+| **Owner-Bound Calls** | Direct Namespace Management (`updatePayouts`, `updateMetadata`) | Bound EVM Wallet Session | Requires `msg.sender == owner` on Robinhood Chain. |
 
 ---
 
@@ -148,21 +146,23 @@ export async function signIn(publicKey: PublicKey, signMessage: (msg: Uint8Array
 * **Availability Search**:
   * Real-time validation: Lowercase alphanumeric + underscores only (`/^[a-z0-9_]{3,32}$/`).
   * Queries `GET /hashtags/check/:name` to show if available or taken.
-* **Registration Flow**:
+* **User Handle Lookup (`GET /hashtags/user/:handle`)**:
+  * Returns `{ handle, linked, wallet, solanaWallet, hashtags }`.
+  * Used by the Send box to distinguish instant transfers from unlinked escrow deposits.
+* **Registration & Seed Phrase Flow**:
   1. User enters desired hashtag (e.g. `#solbuilder`).
   2. Generates cryptographic **Account Recovery Phrase** (12-word seed / high-entropy phrase committed onchain as `recoveryHash`).
   3. Previews registration cost in SOL / USDC.
-  4. Calls `POST /relay/quote` to execute `registerHashtag()` on Robinhood Chain via Relay.link.
-  5. Mints `HashtagNFT` onchain to represent permanent ownership.
+  4. Mints `HashtagNFT` onchain to represent permanent ownership.
 * **Profile Metadata Editor**:
   * Display Name, Avatar Image URL, Bio Description, Website URL.
   * Social Handles: Twitter/X, Telegram, Discord, GitHub, Email.
 * **Subscription & Renewals**:
   * 30-day lease lifecycle with live countdown badge.
-  * 72-hour grace period protection before anyone can claim/re-mint an expired handle.
-  * One-click "Renew Subscription" button.
+  * 72-hour grace period protection before public re-registration.
+  * "Renew Subscription" button (Relay-safe, callable with SOL/USDC via Relay).
 * **Cryptographic Recovery Flow**:
-  * If a user loses access to their Solana wallet, they can open the **Account Recovery** tab from a new wallet, input `#hashtag` + their recovery phrase, and call `transferViaRecoveryPhrase` to restore ownership to the new wallet without admin approval.
+  * If a user loses access to their Solana wallet, they can enter `#hashtag` + their recovery phrase on any new wallet and call `transferViaRecoveryPhrase` to restore ownership without admin approval.
 
 ---
 
@@ -181,7 +181,7 @@ A shareable public URL for creators, DAOs, and freelancers (e.g., `tagiopay.com/
 Users can configure how incoming payments to `#hashtag` are divided:
 * **Add Recipient Wallets**: Up to 10 destination Solana wallets.
 * **Percentage Split Allocations**: Expressed in basis points (e.g. 70.00% = `7000`, 30.00% = `3000`, must total exactly 100.00% / `10000`).
-* **Onchain Execution**: Updates `HashtagResolver.sol` onchain. Whenever a client pays `#hashtag`, funds are atomically divided and fanned out in a single transaction.
+* **Execution**: Whenever a client pays `#hashtag`, funds are atomically divided and fanned out in a single transaction.
 
 ---
 
@@ -233,15 +233,15 @@ Bilateral milestone protection for freelancers and clients:
 * **Deliver**: Freelancer uploads work or submits delivery URL.
 * **Release**: Client verifies work and releases funds.
 * **Timeout Protections**:
-  * If freelancer fails to deliver before deadline → Client can refund deposit.
-  * If client becomes unresponsive after delivery → Freelancer can trigger force-release after review window.
+  * If freelancer fails to deliver before deadline $\rightarrow$ Client can refund deposit.
+  * If client becomes unresponsive after delivery $\rightarrow$ Freelancer can trigger force-release after review window.
 
 ---
 
 ### Module 9: Causes & Crowdfunding Registry (`CauseRegistry`)
 
 * **Create a Cause**: Tie a charitable fundraiser to a verified `#hashtag` with a mission title, description, and target goal in USD.
-* **Public Donations**: Backers donate SOL or USDC directly from the web app.
+* **Public Donations**: Backers donate SOL or USDC directly from the web app (Relay-safe, 0.15% fee).
 * **Live Donor Leaderboard**: Displays top donors, total raised vs goal percentage progress bar, and contributor count.
 * **Proof-of-Withdrawal Transparency**: Cause organizers publish onchain transaction proofs and status updates whenever funds are deployed.
 
@@ -275,15 +275,17 @@ Bilateral milestone protection for freelancers and clients:
 
 ## 5. Relay.link Integration Blueprint
 
-For all smart contract calls (Hashtag register/renew, splits, escrows, causes, private send):
+For smart contract calls and cross-chain execution:
 
 ```typescript
-// 1. Request Relay Quote from Backend
+// 1. Request Relay Quote from Backend (with 0.15% protocol fee)
 const quote = await fetch("https://api.tagiopay.com/relay/quote", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
   body: JSON.stringify({
     user: publicKey.toBase58(), // Solana wallet
+    originChainId: 792703809,   // Solana
+    destinationChainId: 13746,  // Robinhood L2
     originCurrency: "11111111111111111111111111111111", // SOL (or USDC: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v)
     amount: "100000000", // Amount in base units
     txs: [
@@ -319,18 +321,19 @@ All routes requiring authentication accept `Authorization: Bearer <token>`.
 
 ### Hashtags & Identity
 * `GET /hashtags/check/:hashtag`: Check handle availability (`{ available: boolean }`).
+* `GET /hashtags/user/:handle`: Lookup handle link status, Solana/EVM wallets, and owned hashtags.
 * `GET /hashtags/resolve/:hashtag`: Returns resolved address, payout splits, and metadata (<50ms cached).
 * `GET /hashtags/user/:walletAddress`: List all hashtags owned by or routing to this wallet.
 * `POST /hashtags/confirm-transaction`: Synchronizes onchain registration/renewal events.
 
 ### Cross-Chain Relay (0.15% Protocol Fee)
-* `POST /relay/quote`: Fetches cross-chain quote from Solana (SOL/USDC) to Robinhood contracts with 0.15% fee.
+* `POST /relay/quote`: Fetches cross-chain or same-chain quote from Solana with 0.15% fee.
 * `GET /relay/intent/:requestId`: Checks status of cross-chain execution.
 
 ### Trading & Swaps
 * `GET /tokens`: Directory of supported base currencies (`SOL`, `USDC`) and 714+ Solana xStocks equities.
-* `POST /swap/quote`: Price quote and route calculation.
-* `POST /swap/plan`: Prepares execution steps for token swaps.
+* `POST /swap/quote`: Price quote and route calculation via Relay.
+* `POST /swap/plan`: Prepares serialized Solana instructions for token swaps via Relay.
 
 ### Escrows & Causes
 * `GET /escrows?wallet=:address`: List user's active freelance escrows.
@@ -339,7 +342,7 @@ All routes requiring authentication accept `Authorization: Bearer <token>`.
 * `GET /causes/:causeId/leaderboard`: Top donor rankings for a specific cause.
 
 ### Private Send & Pending Queue
-* `GET /private-sends?wallet=:address`: List user's shielded transactions and keeper sweep statuses.
+* `GET /private-sends?wallet=:address`: List user's shielded transactions (accepts Solana base58 or EVM 0x addresses).
 * `POST /private-sends`: Create a private send transaction.
 * `POST /private-sends/:id/claim`: Manual claim fallback for private send.
 * `GET /pending-transactions`: List pending bot transactions waiting for user confirmation.

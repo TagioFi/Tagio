@@ -81,14 +81,22 @@ export async function linkXAccount(
   const solanaAddr = chainType === "solana" || isSolanaAddress(walletAddress) ? walletAddress : null;
   const evmAddr = chainType === "robinhood" || isEvmAddress(walletAddress) ? walletAddress.toLowerCase() : null;
 
-  await pool.query(
-    `INSERT INTO x_accounts (wallet_address, solana_wallet_address, evm_wallet_address, x_user_id, x_handle)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (wallet_address) DO UPDATE SET 
-       x_user_id = EXCLUDED.x_user_id, 
-       x_handle = EXCLUDED.x_handle,
-       solana_wallet_address = COALESCE(EXCLUDED.solana_wallet_address, x_accounts.solana_wallet_address),
-       evm_wallet_address = COALESCE(EXCLUDED.evm_wallet_address, x_accounts.evm_wallet_address)`,
-    [walletAddress, solanaAddr, evmAddr, xUserId, xHandle],
-  );
+  try {
+    await pool.query(
+      `INSERT INTO x_accounts (wallet_address, solana_wallet_address, evm_wallet_address, x_user_id, x_handle)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (x_user_id) DO UPDATE SET 
+         x_handle = EXCLUDED.x_handle,
+         solana_wallet_address = COALESCE(EXCLUDED.solana_wallet_address, x_accounts.solana_wallet_address),
+         evm_wallet_address = COALESCE(EXCLUDED.evm_wallet_address, x_accounts.evm_wallet_address)`,
+      [walletAddress, solanaAddr, evmAddr, xUserId, xHandle],
+    );
+  } catch (err: any) {
+    if (err.code === "23505") {
+      const error: any = new Error("This wallet address or X account is already linked to another user.");
+      error.status = 409;
+      throw error;
+    }
+    throw err;
+  }
 }
