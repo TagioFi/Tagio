@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { config } from "../../config";
 import { pool } from "../../db/pool";
-import { consumePendingAuthState } from "../../v1/services/x/pendingAuthState";
-import { exchangeCodeForToken, getAuthenticatedXUser } from "../../v1/services/x/oauth";
+import { consumePendingV2AuthState } from "../services/pendingAuthState";
+import { exchangeCodeForToken, getAuthenticatedXUser } from "../services/oauth";
 import { issueV2Jwt } from "./auth";
 
 const router = Router();
@@ -21,7 +21,7 @@ router.get("/v2/auth/x/callback", async (req, res, next) => {
       return;
     }
 
-    const pending = await consumePendingAuthState(state);
+    const pending = await consumePendingV2AuthState(state);
     if (!pending) {
       res.redirect(`${config.frontendUrl}/auth/callback?error=expired_or_invalid_state`);
       return;

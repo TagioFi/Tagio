@@ -4,8 +4,8 @@ import { verifyMessage, isAddress } from "viem";
 import { randomBytes } from "crypto";
 import { pool } from "../../db/pool";
 import { config } from "../../config";
-import { generatePkcePair, buildAuthorizeUrl } from "../../v1/services/x/oauth";
-import { storePendingAuthState } from "../../v1/services/x/pendingAuthState";
+import { generatePkcePair, buildAuthorizeUrl } from "../services/oauth";
+import { storePendingV2AuthState } from "../services/pendingAuthState";
 
 const router = Router();
 
@@ -70,7 +70,7 @@ router.post("/v2/auth/signin", async (req, res, next) => {
     // Step 2: X Linking required
     const state = `v2_${randomBytes(16).toString("hex")}`;
     const { codeVerifier, codeChallenge } = generatePkcePair();
-    await storePendingAuthState(state, { walletAddress: normalizedWallet, codeVerifier });
+    await storePendingV2AuthState(state, { walletAddress: normalizedWallet, codeVerifier });
 
     res.json({
       needsXLink: true,
