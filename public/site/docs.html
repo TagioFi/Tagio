@@ -1,0 +1,182 @@
+<!DOCTYPE html><!-- This site was created in Webflow. https://webflow.com --><!-- Last Published: Fri Jun 12 2026 11:30:42 GMT+0000 (Coordinated Universal Time) --><html data-wf-domain="katastudio.webflow.io" data-wf-page="6a134bc73f6e8503a82c8dd3" data-wf-site="69628af1f5c1d6b97e44bd5b" data-wf-status="1" lang="en"><head><meta charset="utf-8"/><link href="https://cdn.prod.website-files.com" rel="preconnect" crossorigin="anonymous"/><title>TagioFi · Docs</title><meta content="TagioFi documentation: product overview and full backend spec · receive-mixes, settlement engine, contracts, security, and the shipping roadmap." name="description"/><meta content="TagioFi · Contact" property="og:title"/><meta content="Contact the TagioFi team · tag-native payment settlement on Robinhood Chain." property="og:description"/><meta content="assets/img/6a13552a5b87f35e6021e6c0_share-img.avif" property="og:image"/><meta content="TagioFi · Contact" name="twitter:title"/><meta content="Contact the TagioFi team · tag-native payment settlement on Robinhood Chain." name="twitter:description"/><meta content="assets/img/6a13552a5b87f35e6021e6c0_share-img.avif" name="twitter:image"/><meta property="og:type" content="website"/><meta content="summary_large_image" name="twitter:card"/><meta content="width=device-width, initial-scale=1" name="viewport"/><meta content="Webflow" name="generator"/><link href="assets/css/katastudio.css" rel="stylesheet" type="text/css"/><link href="assets/css/tagiofi.css" rel="stylesheet" type="text/css"/><style>html.w-mod-js:not(.w-mod-ix3) :is(.hero-masthead-background_img, [data-animate="text-slide-up"], [data-animate="background-scale"], path, .nav-bg) {visibility: hidden !important;}</style><link href="https://fonts.googleapis.com" rel="preconnect"/><link href="https://fonts.gstatic.com" rel="preconnect" crossorigin="anonymous"/><link href="assets/css/manrope.css" rel="stylesheet" type="text/css"/><script type="text/javascript">!function(o,c){var n=c.documentElement,t=" w-mod-";n.className+=t+"js",("ontouchstart"in o||o.DocumentTouch&&c instanceof DocumentTouch)&&(n.className+=t+"touch")}(window,document);</script><link href="assets/img/6a132bb022b8259dc23e78af_web-clip.png" rel="icon" type="image/png" sizes="32x32" media="(prefers-color-scheme: light)"/><link href="assets/img/6a132bd393c823312d5f748b_web-clip-light.png" rel="icon" type="image/png" sizes="32x32" media="(prefers-color-scheme: dark)"/><link href="assets/img/6a132bb0f2ea45b7b88a95ea_web-clip.png" rel="icon" type="image/png" sizes="48x48"/><link href="assets/img/6a132bb03795e24efad56701_web-clip.png" rel="apple-touch-icon" sizes="180x180"/><link href="assets/img/6a132bb0bb9ece12e9a4c437_web-clip.png" rel="icon" type="image/png" sizes="192x192"/><link href="assets/img/6a132bb00d985405c0a0ec01_web-clip.png" rel="icon" type="image/png" sizes="512x512"/></head><body><div class="page_wrapper"><div class="page_main"><div data-animation="default" data-collapse="small" data-duration="400" data-easing="ease" data-easing2="ease" role="banner" class="nav w-nav"><div class="nav_container container"><nav role="navigation" class="nav-menu w-nav-menu"><div class="nav-link_slot"><a href="product.html" class="nav-link w-nav-link">Product</a><a href="roadmap.html" class="nav-link w-nav-link">Roadmap</a><div data-hover="false" data-delay="0" class="nav-dropdown w-dropdown"><div class="nav-dropdown_toggle nav-link w-dropdown-toggle"><div>Use Case</div><svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 8 8" fill="none" class="icon-xs"><path d="M6.5 3L4 5.5L1.5 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path></svg></div><nav class="nav-dropdown_wrapper w-dropdown-list"><a href="use-cases/agencies.html" class="nav-link w-dropdown-link">Creators</a><a href="use-cases/product-teams.html" class="nav-link w-dropdown-link">Teams &amp; DAOs</a><a href="use-cases/support-teams.html" class="nav-link w-dropdown-link">Businesses</a></nav></div></div><div class="nav_btn-wrapper"><div data-wf--element-button--variant="secondary" id="" STYLE="max-width: auto;" class="button w-variant-bdc5721c-e2b8-df28-42bf-46e996130395"><div class="btn-text">Dashboard</div><a href="dashboard.html" class="button-link w-inline-block"></a><div class="icon-slot"><svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 24 24" fill="none" class="icon"><path opacity="0.2" d="M20.25 12L13.5 18.75V5.25L20.25 12Z" fill="currentColor"></path><path d="M20.7806 11.47L14.0306 4.71997C13.9257 4.61496 13.792 4.54343 13.6465 4.51444C13.5009 4.48546 13.35 4.50031 13.2129 4.55712C13.0758 4.61394 12.9586 4.71016 12.8762 4.8336C12.7938 4.95705 12.7499 5.10217 12.75 5.25059V11.2506H3.75C3.55109 11.2506 3.36032 11.3296 3.21967 11.4703C3.07902 11.6109 3 11.8017 3 12.0006C3 12.1995 3.07902 12.3903 3.21967 12.5309C3.36032 12.6716 3.55109 12.7506 3.75 12.7506H12.75V18.7506C12.7499 18.899 12.7938 19.0441 12.8762 19.1676C12.9586 19.291 13.0758 19.3872 13.2129 19.4441C13.35 19.5009 13.5009 19.5157 13.6465 19.4867C13.792 19.4577 13.9257 19.3862 14.0306 19.2812L20.7806 12.5312C20.8504 12.4616 20.9057 12.3788 20.9434 12.2878C20.9812 12.1967 21.0006 12.0992 21.0006 12.0006C21.0006 11.902 20.9812 11.8044 20.9434 11.7134C20.9057 11.6223 20.8504 11.5396 20.7806 11.47ZM14.25 16.9403V7.0609L19.1897 12.0006L14.25 16.9403Z" fill="currentColor"></path></svg></div></div><div data-wf--element-button--variant="primary" id="" STYLE="max-width: auto;" class="button" data-wallet-connect=""><div class="btn-text">Connect Wallet</div><a href="#" class="button-link w-inline-block"></a><div class="icon-slot"><svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 24 24" fill="none" class="icon"><path opacity="0.2" d="M20.25 12L13.5 18.75V5.25L20.25 12Z" fill="currentColor"></path><path d="M20.7806 11.47L14.0306 4.71997C13.9257 4.61496 13.792 4.54343 13.6465 4.51444C13.5009 4.48546 13.35 4.50031 13.2129 4.55712C13.0758 4.61394 12.9586 4.71016 12.8762 4.8336C12.7938 4.95705 12.7499 5.10217 12.75 5.25059V11.2506H3.75C3.55109 11.2506 3.36032 11.3296 3.21967 11.4703C3.07902 11.6109 3 11.8017 3 12.0006C3 12.1995 3.07902 12.3903 3.21967 12.5309C3.36032 12.6716 3.55109 12.7506 3.75 12.7506H12.75V18.7506C12.7499 18.899 12.7938 19.0441 12.8762 19.1676C12.9586 19.291 13.0758 19.3872 13.2129 19.4441C13.35 19.5009 13.5009 19.5157 13.6465 19.4867C13.792 19.4577 13.9257 19.3862 14.0306 19.2812L20.7806 12.5312C20.8504 12.4616 20.9057 12.3788 20.9434 12.2878C20.9812 12.1967 21.0006 12.0992 21.0006 12.0006C21.0006 11.902 20.9812 11.8044 20.9434 11.7134C20.9057 11.6223 20.8504 11.5396 20.7806 11.47ZM14.25 16.9403V7.0609L19.1897 12.0006L14.25 16.9403Z" fill="currentColor"></path></svg></div></div></div><div class="hide w-embed"><style> 
+.nav-link_slot .nav-link {
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.nav-link_slot:has(.nav-link:hover) .nav-link {
+  opacity: 0.5;
+}
+
+.nav-link_slot:has(.nav-link:hover) .nav-link:hover {
+  opacity: 1;
+}
+</style></div></nav><a href="index.html" class="nav-logo w-nav-brand"><img src="assets/brand/tagiofi-logo-black.png" alt="TagioFi" class="nav-logo_img"/><span class="nav-logo_text">TagioFi</span></a><div class="nav-menu-btn w-nav-button"><div class="nav-icon w-icon-nav-menu"></div></div><div class="nav-bg"></div></div></div><section class="section docs-hero"><div id="" class="container"><div id="" STYLE="max-width: 46rem;" class="copy-block"><h1 data-animate="text-slide-up" class="heading-2xl">TagioFi Docs</h1><div class="bottom-padding-sm"></div><p data-animate="text-slide-up">Your tag knows what you want to be paid in. Product overview and full backend spec for tag-native payment settlement on Robinhood Chain.</p><div class="bottom-padding"></div><div class="docs-kbd-row"><span>$TGIO</span><span>Robinhood Chain (4663)</span><span>Testnet 46630</span><span>Non-custodial</span><span>Foundry · Bun/TS</span></div></div></div></section>
+<section class="section"><div id="" class="container"><div class="docs-layout">
+<nav class="docs-toc">
+<div class="docs-toc-title">Overview</div>
+<a href="#one-line">The one-liner</a>
+<a href="#how-it-works">How it works</a>
+<a href="#the-field">The field</a>
+<a href="#seats">Everyone has a seat</a>
+<a href="#tgio">$TGIO</a>
+<a href="#straight-talk">Straight talk</a>
+<a href="#roadmap-doc">Shipping order</a>
+<div class="docs-toc-title">Backend Spec</div>
+<a href="#design-laws">Design laws</a>
+<a href="#architecture">Architecture</a>
+<a href="#contracts">Contracts</a>
+<a href="#settlement">Settlement engine</a>
+<a href="#data-model">Data model</a>
+<a href="#security">Security &amp; integrity</a>
+<a href="#testing">Testing &amp; acceptance</a>
+<a href="#build-order">Build order</a>
+</nav>
+<div class="docs-body">
+
+<h2 id="one-line">The one-liner</h2>
+<p>On TagioFi, your payment tag carries your preferences. Tell your tag once, <strong>“I take 60% SPY, 30% USDG, 10% gold”</strong>, and every payment that hits it arrives converted: the tip, the invoice, the salary, the split. Senders send anything; your tag makes sure what lands is what you’d actually keep. Stop receiving money you immediately have to convert. Start receiving the portfolio.</p>
+<div class="docs-callout"><strong>Category claim (permanent, verifiable):</strong> the first payment tag that settles in tokenized stocks.</div>
+<p>Institutions just proved people want this: the first RWA payroll pilot (Plume × Toku × WisdomTree) let staff take salary in a tokenized money-market fund, but it’s a closed program: one employer, one fund, verified wallets, a payroll vendor in the middle. Wallets solved the buy side (MetaMask × Ondo: swap into 200+ tokenized assets). The receive side, payments that arrive as the asset you want, doesn’t exist anywhere, for anyone.</p>
+<p>Robinhood Chain is the only venue where this is trivial to make real: tokenized stocks are native tokens with live Chainlink pricing, and the chain carries an on-chain tag registry, NFT-registered payment tags whose resolver exposes a destination, programmable splits, and a preferred-settlement-asset field that today sits unused. TagioFi is the machine that makes that preference field mean something.</p>
+
+<h2 id="how-it-works">How it works</h2>
+<ol>
+<li><strong>Point your tag.</strong> Own or register a tag in the chain’s tag registry; set your receive-mix, any blend of registry-verified assets (tokenized equities/ETFs, USDG, tokenized metals), percentages totaling 100.</li>
+<li><strong>Share it everywhere.</strong> Bio, invoice footer, stream overlay, storefront QR. Anyone pays the tag in any token they hold.</li>
+<li><strong>It lands converted.</strong> The TagioFi settlement contract resolves the tag, honors the mix, swaps within strict slippage and Chainlink price-sanity bounds, and delivers to your wallet, one atomic flow, nothing custodied, ever.</li>
+<li><strong>Teams too.</strong> A tag with splits pays each member their share in their own mix, one client payment, four people, four different portfolios. A payroll vault runs the roster on schedule.</li>
+</ol>
+
+<h2 id="the-field">The field, and where they stop short</h2>
+<table>
+<thead><tr><th></th><th>Closed payroll pilots</th><th>Wallet swap features</th><th>Fee-drip stock tokens</th><th>TagioFi</th></tr></thead>
+<tbody>
+<tr><td>Who gets paid this way</td><td>One company’s staff</td><td>Nobody (buy-only)</td><td>Passive holders</td><td>Anyone with a tag</td></tr>
+<tr><td>Asset choice</td><td>Single fund</td><td>n/a</td><td>Curated for you</td><td>Your mix, your call</td></tr>
+<tr><td>Works for commerce/invoices</td><td>No</td><td>No</td><td>No</td><td>Yes, that’s the point</td></tr>
+</tbody>
+</table>
+<p><em>“Your paycheck shouldn’t need a second transaction to become your portfolio.”</em></p>
+
+<h2 id="seats">Everyone has a seat</h2>
+<table>
+<thead><tr><th>Who</th><th>Does</th><th>Gets</th></tr></thead>
+<tbody>
+<tr><td><strong>Earner</strong></td><td>Sets a receive-mix on their tag</td><td>Every payment auto-builds their book</td></tr>
+<tr><td><strong>Payer</strong></td><td>Pays a tag with whatever they hold</td><td>Zero-thought sending</td></tr>
+<tr><td><strong>Crew / DAO</strong></td><td>Split tags + payroll vault</td><td>Whole-roster salary-in-assets</td></tr>
+<tr><td><strong>$TGIO staker</strong></td><td>Backs the registry/params</td><td>Share of settlement fees</td></tr>
+</tbody>
+</table>
+
+<h2 id="tgio">$TGIO</h2>
+<p id="fees">Bounded settlement fee on converted volume + payroll tiers → open-market $TGIO buyback + staker distribution <strong>(80/10/5/5)</strong>. Same-asset payments are permanently free, the rail grows first, the conversion monetizes.</p>
+<p id="staking">Stakers back the registry and its parameters and earn a share of settlement fees. The fast path, sent asset equals mixed asset, is a direct transfer with zero fee, hardcoded, forever.</p>
+
+<h2 id="straight-talk">Straight talk</h2>
+<ul>
+<li>Receive-mixes draw only from the verified registry (canonical, liquid); RHC Stock Tokens are debt securities, region-gated, unavailable to US persons, disclosed at mix-setup.</li>
+<li>A leg that can’t fill within bounds arrives as USDG with an on-chain notice. Payments complete; they never fill ugly or strand.</li>
+<li>No balances held, no custody, no payroll/tax function, employers plug in at their own compliance layer.</li>
+</ul>
+
+<h2 id="roadmap-doc">Shipping order</h2>
+<table>
+<thead><tr><th>Phase</th><th>Ships</th></tr></thead>
+<tbody>
+<tr><td><strong>1</strong></td><td>Tag receive-mixes + single-recipient settlement + verified-asset gate</td></tr>
+<tr><td><strong>2</strong></td><td>Split tags (per-member mixes) + invoices / pay-links / QR</td></tr>
+<tr><td><strong>3</strong></td><td>Payroll vault + $TGIO genesis</td></tr>
+<tr><td><strong>4</strong></td><td>Verified-social tag payments + cross-chain pay-in</td></tr>
+</tbody>
+</table>
+<p>Kill/persist: Phase 1 is the claim and a complete product. If conversion volume lags at day 30, lead with the payroll-vault B2B lane and keep the rail as infrastructure.</p>
+
+<h2 id="design-laws">Design laws</h2>
+<ol>
+<li><strong>The receive-mix is law.</strong> Every settlement resolves the tag, honors the recipient’s mix exactly, delivers to their wallet. Atomic; zero custody.</li>
+<li><strong>Verified assets only.</strong> Canonical-registry authenticity + liquidity floor, fail-closed: spoofed/illiquid assets can’t enter a mix or a delivery.</li>
+<li><strong>Complete, never ugly.</strong> Per-leg slippage caps + Chainlink <code>latestRoundData()</code> × <code>uiMultiplier()</code> sanity (staleness / <code>oraclePaused</code> guarded). A breaching leg safe-settles in USDG with an on-chain notice.</li>
+<li><strong>Read the tag standard; never fork it.</strong> Tags live in the chain’s existing tag registry (ERC-721; resolver returns owner, destination, splits Σ=10000 bps, activity/expiry). TagioFi consumes it read-only via a pinned interface and builds settlement above it.</li>
+<li><strong>Free fast path.</strong> Sent asset == mixed asset → direct transfer, zero fee, forever.</li>
+</ol>
+
+<h2 id="architecture">Architecture</h2>
+<pre><code>[Payer wallet] → pay(tag | linkId, tokenIn, amountIn)
+        ▼
+TagRouter.sol
+1. resolve(tag) via ITagResolver {owner, destination, splits[], active, expiry}
+2. load ReceiveMix(recipientWallet), fallback 100% USDG
+3. splits × mix-legs → conversion plan
+4. validated swaps (0x/Uniswap) → deliver → Receipt event</code></pre>
+<p><strong>Contracts:</strong> TagRouter.sol · MixRegistry.sol · PayLinks.sol · RosterVault.sol · TGIO.sol · FeeVault.sol<br/>
+<strong>External:</strong> ITagResolver (chain tag standard, read-only)<br/>
+<strong>Off-chain:</strong> Bun + Hono + tRPC v11 · Drizzle/Postgres + Timescale · Redis + BullMQ · viem · 0x/Uniswap · Chainlink · canonical RWA registry · 60s tag-resolution cache · Dwellir RPC</p>
+
+<h2 id="contracts">Contracts (Foundry)</h2>
+<pre><code>// ITagResolver, external standard: getInfo(string tag) → (owner, destination,
+//   Split[]{wallet,bps}, registeredAt, expiresAt, active)
+// MixRegistry.sol, setMix(Leg[]{asset,bps}) Σ=10000, ≤8 legs; every asset checked against
+//   VerifiedRegistry root; keyed to RECIPIENT WALLET (portable across tags); default 100% USDG;
+//   asset turning unverified → that leg auto-falls to USDG + Notice.
+// TagRouter.sol, pay(tagOrLink, tokenIn, amountIn, minOuts[]): resolve → active/expiry check
+//   (expired tag reverts, no lapsed-tag hijack) → splits → per-recipient mix legs →
+//   allowlisted-venue swaps with per-leg slippage caps + Chainlink sanity → transfers →
+//   Receipt{payer, tagHash, legs, fee}. Atomic or safe-settle; router never retains funds.
+// PayLinks.sol, createLink(tag, amount?, memoHash, expiry) → linkId; pay(linkId) binds invoice.
+// RosterVault.sol, funder budget + roster{wallet, amountPerCycle}; run() permissionless;
+//   every payout settles through each member's own mix; pages 200 payouts/tx.
+// FeeVault.sol, bounded fee bps (fast path 0) → $TGIO buyback + stakers.</code></pre>
+
+<h2 id="settlement">Settlement engine</h2>
+<p>Quote service composes the plan (0x quotes; one swap per distinct output asset across all splits); TagRouter enforces on-chain: venue allowlist, calldata target/selector checks, slippage caps, Chainlink sanity with staleness / <code>oraclePaused</code> guards (violations → USDG safe-settle for that leg). ≤8 mix legs; direct transfers for delivery (payments are 1–5 recipients; roster runs page). Stock Token deliveries record <code>{raw, uiMultiplier}</code> in receipts so balances display correctly across corporate actions.</p>
+
+<h2 id="data-model">Data model (Drizzle)</h2>
+<pre><code>mixes    /* wallet, legs jsonb[{asset,bps}], updatedAt */
+receipts /* id, payer, tagHash, recipients jsonb, legs jsonb[{asset, raw, uiMult, px}], feeWei, txHash, ts */ // Timescale
+links    /* linkId, tagHash, amount?, memoHash, expiry, status, receiptId? */
+rosters  /* id, funder, members jsonb, budget, cycleLen, nextRunAt, status */
+verified /* asset, symbol, authentic, depthUsd, eligible, sampledAt */
+tagcache /* tagHash, resolved jsonb, cachedAt */  // 60s TTL</code></pre>
+<p><strong>tRPC:</strong> <code>payRouter.quote(tag, tokenIn, amount)</code>, <code>mixRouter.set/get</code>, <code>linkRouter.create/status</code>, <code>rosterRouter</code>, <code>receiptRouter.history</code>.<br/>
+<strong>Workers:</strong> quote-service, roster-runner (+ permissionless trigger), verified-refresher, tag-cache, chain-indexer.</p>
+
+<h2 id="security">Security &amp; integrity</h2>
+<ul>
+<li><strong>Zero-residue invariant:</strong> router balance is zero after every settlement (tested).</li>
+<li>On-chain swap validation (allowlist + selector + slippage + sanity), a compromised quote service can’t mis-route or dump.</li>
+<li>Tag expiry enforced at pay time; resolution pinned to the payment block.</li>
+<li>Mixes wallet-keyed + sig-gated; nobody redirects another’s mix. Fee bps bounded; fast path hardcoded free.</li>
+<li>Fresh deployer + multisig per studio OPSEC. Region/debt-security notices at mix-setup; suspended assets fall to USDG automatically, delivery never blocked.</li>
+</ul>
+
+<h2 id="testing">Testing &amp; acceptance</h2>
+<p><strong>Foundry:</strong> atomic-or-safe-settle; zero-residue; splits×mixes matrix (3 recipients, 3 distinct mixes, exact); expired-tag revert; unverified-asset mix revert; slippage breach → USDG + Notice; oracle-paused leg → safe-settle; multiplier-event fixture keeps delivered balances correct.</p>
+<p>Quote preview matches execution within tolerance; roster pages 200/tx honoring per-member mixes.</p>
+<div class="docs-callout"><strong>Acceptance:</strong> (1) pay a tag 1 ETH → recipient receives 60/30/10 SPY/USDG/GLD per their mix in one flow; (2) same-asset pays free + direct; (3) a pay-link settles identically and flips paid; (4) a 3-way split pays three different portfolios; (5) a bad-fill leg arrives as USDG with visible notice; (6) router at zero after every settlement.</div>
+
+<h2 id="build-order">Build order</h2>
+<ol>
+<li><strong>MixRegistry + TagRouter</strong> (single recipient) + verified gate + quote preview.</li>
+<li><strong>Splits + PayLinks.</strong></li>
+<li><strong>RosterVault + $TGIO genesis</strong> + fee switch (fast path stays free).</li>
+<li><strong>Verified-social tag pay + cross-chain pay-in</strong> (support-confirmed first).</li>
+</ol>
+<p>Dev caveats: pin ITagResolver against the deployed registry ABI (read-only; independent of its upgrade path); Chainlink staleness / <code>oraclePaused</code> guards per studio standard; set the initial verified-asset floor from live venue depth at launch.</p>
+
+</div></div></div></section>
+<footer class="section"><div id="" class="footer_container container"><div class="footer_slot"><div class="container"></div><div class="footer_content-wrapper"><div class="newsletter w-form"><form id="wf-form-Newsletter" name="wf-form-Newsletter" data-name="Newsletter" method="get" class="newsletter_wrapper" data-wf-page-id="6a134bc73f6e8503a82c8dd3" data-wf-element-id="110286d3-1433-9e23-a43f-a17699c9f1af"><label for="name" class="footer-label">Updates</label><div class="newsletter_field-wrapper"><input class="newsletter_field w-input" maxlength="256" name="name" data-name="Name" placeholder="Email Address" type="email" id="name" required=""/><div class="newsletter_submit-wrapper"><button type="submit" data-wait="Please wait..." STYLE="max-width: auto;" value="Submit" class="button newsletter_submit w-button"><div class="btn-text">Subscribe</div><div class="icon-slot"><svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 24 24" fill="none" class="icon"><path opacity="0.2" d="M20.25 12L13.5 18.75V5.25L20.25 12Z" fill="currentColor"></path><path d="M20.7806 11.47L14.0306 4.71997C13.9257 4.61496 13.792 4.54343 13.6465 4.51444C13.5009 4.48546 13.35 4.50031 13.2129 4.55712C13.0758 4.61394 12.9586 4.71016 12.8762 4.8336C12.7938 4.95705 12.7499 5.10217 12.75 5.25059V11.2506H3.75C3.55109 11.2506 3.36032 11.3296 3.21967 11.4703C3.07902 11.6109 3 11.8017 3 12.0006C3 12.1995 3.07902 12.3903 3.21967 12.5309C3.36032 12.6716 3.55109 12.7506 3.75 12.7506H12.75V18.7506C12.7499 18.899 12.7938 19.0441 12.8762 19.1676C12.9586 19.291 13.0758 19.3872 13.2129 19.4441C13.35 19.5009 13.5009 19.5157 13.6465 19.4867C13.792 19.4577 13.9257 19.3862 14.0306 19.2812L20.7806 12.5312C20.8504 12.4616 20.9057 12.3788 20.9434 12.2878C20.9812 12.1967 21.0006 12.0992 21.0006 12.0006C21.0006 11.902 20.9812 11.8044 20.9434 11.7134C20.9057 11.6223 20.8504 11.5396 20.7806 11.47ZM14.25 16.9403V7.0609L19.1897 12.0006L14.25 16.9403Z" fill="currentColor"></path></svg></div></button></div></div></form><div class="newsletter_success w-form-done"><div class="newsletter_success-wrapper"><div class="footer-label">Updates</div><div class="newsletter_success-message"><div>Thank you! Your submission has been received!</div></div></div></div><div class="newsletter_error-message w-form-fail"><div>Oops! Something went wrong while submitting the form.</div></div></div><div class="footer_links-wrapper"><div class="footer_link-wrapper"><div class="footer-label">Product</div><a href="product.html" class="footer-link">Product</a><a href="roadmap.html" class="footer-link">Roadmap</a><a href="dashboard.html" class="footer-link">Dashboard</a></div><div class="footer_link-wrapper"><div class="footer-label">Use Cases</div><a href="use-cases/agencies.html" class="footer-link">Creators</a><a href="use-cases/product-teams.html" class="footer-link">Teams &amp; DAOs</a><a href="use-cases/support-teams.html" class="footer-link">Businesses</a></div><div class="footer_link-wrapper"><div class="footer-label">Resources</div><a href="docs.html" class="footer-link">Docs</a><a href="index.html#faq" class="footer-link">FAQ</a><a href="contact.html" aria-current="page" class="footer-link w--current">Contact</a></div><div class="footer_link-wrapper"><div class="footer-label">$TGIO</div><a href="docs.html#tgio" class="footer-link">Token</a><a href="docs.html#fees" class="footer-link">Fees &amp; Buyback</a><a href="docs.html#staking" class="footer-link">Staking</a></div><div class="footer_link-wrapper"><div class="footer-label">Social</div><a href="https://x.com/tagiofi" target="_blank" class="footer-link">X</a><a href="https://t.me/tagiofi" target="_blank" class="footer-link">Telegram</a></div><div class="hide w-embed"><style>
+.footer_links-wrapper .footer-link {
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.footer_links-wrapper:has(.footer-link:hover) .footer-link {
+  opacity: 0.5;
+}
+
+.footer_links-wrapper:has(.footer-link:hover) .footer-link:hover {
+  opacity: 1;
+}
+</style></div></div></div><div class="footer_meta-wrapper"><div class="footer-label"><strong>© 2026 TAGIOFI</strong></div></div><div class="footer_logo-wrapper"><div class="footer-logo-word"><img src="assets/brand/tagiofi-logo-white.png" alt="TagioFi"/></div></div></div></div><div class="divider-lines_wrapper"><div class="divider-lines_vertical"></div></div><div class="footer_bg container"><div class="footer_bg-wrapper"><div class="footer_bg-shade"></div><img data-animate="background-scale" loading="lazy" alt="" src="assets/img/69b599e9ebedd83b0ca85487_footer-bg.avif" class="footer_bg-image"/></div></div></footer></div><script src="assets/js/jquery.min.js" type="text/javascript" integrity="sha256-9/aliU8dGd2tb6OSsuzixeV4y/faTqgFtohetphbbj0=" crossorigin="anonymous"></script><script src="assets/js/webflow.js" type="text/javascript" integrity="sha384-yT3be4p9HvXrhjtyxSmsdAQXrEbKzW54SeZTA4gVPW9nwarSkc1hC6QlcNC8DWjC" crossorigin="anonymous"></script><script src="assets/js/wallet.js" type="text/javascript"></script><script src="assets/js/gsap.min.js" type="text/javascript"></script><script src="assets/js/ScrollTrigger.min.js" type="text/javascript"></script><script src="assets/js/SplitText.min.js" type="text/javascript"></script></body></html>

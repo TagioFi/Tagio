@@ -6,10 +6,7 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  // backend/ and contracts/ are separate toolchains (Bun/TS with their own
-  // lint setup, and Foundry/Solidity respectively) — this repo is a monorepo,
-  // so scope the frontend's eslint/prettier run to the frontend only.
-  { ignores: ["dist", ".output", ".vinxi", "backend", "contracts", "technical-docs"] },
+  { ignores: ["dist", ".output", ".vinxi"] },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

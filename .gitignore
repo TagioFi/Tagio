@@ -5,6 +5,8 @@
 backend/.env
 contracts/.env
 backend/.secrets/
+backend/cockpit/.env
+backend/cockpit/wallets.json
 
 # Logs
 logs

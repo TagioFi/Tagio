@@ -8,13 +8,9 @@ import {
   Scripts,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
-import { WagmiProvider } from "wagmi";
-import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
-import rainbowKitCss from "@rainbow-me/rainbowkit/styles.css?url";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { wagmiConfig } from "../lib/wagmi";
 
 function NotFoundComponent() {
   return (
@@ -81,32 +77,21 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { name: "theme-color", content: "#ecebe4" },
-      { title: "Tagio — Send money to a name, not an address" },
-      { name: "description", content: "Claim your #handle on Solana. Payments resolve, split, and settle in under a second." },
-      { property: "og:title", content: "Tagio — Send money to a name, not an address" },
-      { property: "og:description", content: "Claim your #handle on Solana. Payments resolve, split, and settle in under a second." },
+      { title: "Lovable App" },
+      { name: "description", content: "Lovable Generated Project" },
+      { name: "author", content: "Lovable" },
+      { property: "og:title", content: "Lovable App" },
+      { property: "og:description", content: "Lovable Generated Project" },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
-      {
-        rel: "stylesheet",
-        href: rainbowKitCss,
-      },
-      // SVG first so the mark stays crisp at every size; the PNG is the
-      // fallback for browsers that don't take SVG icons.
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: "icon", href: "/tagio-mark.png", type: "image/png" },
-      { rel: "apple-touch-icon", href: "/tagio-mark.png" },
-      {
-        rel: "stylesheet",
-        href: "https://api.fontshare.com/v2/css?f[]=general-sans@300,400,500,600&display=swap",
-      },
+      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
   shellComponent: RootShell,
@@ -129,26 +114,13 @@ function RootShell({ children }: { children: ReactNode }) {
   );
 }
 
-import { SolanaAppWalletProvider } from "../lib/solana";
-
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
-    <SolanaAppWalletProvider>
-      <WagmiProvider config={wagmiConfig}>
-        <QueryClientProvider client={queryClient}>
-          <RainbowKitProvider
-            theme={darkTheme({
-              accentColor: "#e2fa3c",
-              accentColorForeground: "#0b0b09",
-            })}
-          >
-            {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-            <Outlet />
-          </RainbowKitProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
-    </SolanaAppWalletProvider>
+    <QueryClientProvider client={queryClient}>
+      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+      <Outlet />
+    </QueryClientProvider>
   );
 }

@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>TagioFi · Dashboard</title>
+<meta content="Your TagioFi dashboard: receive-mix, settlement volume, scheduled payouts, and receipts · non-custodial, on Robinhood Chain." name="description"/>
+<meta content="width=device-width, initial-scale=1" name="viewport"/>
+<link href="assets/css/manrope.css" rel="stylesheet" type="text/css"/>
+<link href="assets/css/tagiofi.css" rel="stylesheet" type="text/css"/>
+<link href="assets/brand/tagiofi-icon.png" rel="icon" type="image/png"/>
+<style>
+.dash-view { display: none; }
+.dash-view.is-active { display: block; animation: viewIn .45s cubic-bezier(.22,1,.36,1); }
+@keyframes viewIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.dash-view-title { font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em; color: #0a1d08; margin-bottom: 0.35rem; }
+.dash-view-sub { color: #6b7860; font-size: 0.95rem; margin-bottom: 1.6rem; max-width: 44rem; line-height: 1.55; }
+.dash-form-row { display: flex; gap: 0.8rem; margin-bottom: 0.9rem; }
+.dash-field { flex: 1; background: rgba(10,29,8,0.04); border: 1px solid rgba(10,29,8,0.09); border-radius: 12px; padding: 0.7rem 0.95rem; }
+.dash-field .dash-field-lbl { font-size: 0.66rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; color: #6b7860; display: block; margin-bottom: 0.2rem; }
+.dash-field input, .dash-field select { border: none; background: none; outline: none; font: inherit; font-weight: 800; font-size: 0.95rem; color: #0a1d08; width: 100%; }
+.mix-leg { display: grid; grid-template-columns: 1fr 110px 40px; gap: 0.7rem; align-items: center; margin-bottom: 0.7rem; }
+.mix-leg select, .mix-leg input { background: rgba(10,29,8,0.04); border: 1px solid rgba(10,29,8,0.09); border-radius: 12px; padding: 0.65rem 0.9rem; font: inherit; font-weight: 700; font-size: 0.9rem; color: #0a1d08; outline: none; }
+.mix-remove { background: rgba(10,29,8,0.05); border: none; border-radius: 10px; width: 38px; height: 38px; font-size: 1rem; cursor: pointer; color: #6b7860; }
+.mix-remove:hover { background: #ffe9e9; color: #b42323; }
+.mix-total { display: flex; align-items: center; justify-content: space-between; margin: 0.6rem 0 1rem; font-weight: 800; font-size: 0.95rem; }
+.mix-total.is-bad { color: #b42323; }
+.mix-total.is-good { color: #203b14; }
+.dash-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px); background: #203b14; color: #fbfdf6; font-weight: 700; font-size: 0.88rem; padding: 0.8rem 1.4rem; border-radius: 999px; box-shadow: 0 18px 40px -12px rgba(10,29,8,0.4); opacity: 0; transition: all .4s cubic-bezier(.22,1,.36,1); z-index: 99; pointer-events: none; }
+.dash-toast.is-shown { opacity: 1; transform: translateX(-50%) translateY(0); }
+.dash-btn-ghost { background: rgba(32,59,20,0.06); color: #203b14; border: 1px solid rgba(32,59,20,0.16); border-radius: 12px; padding: 0.7rem; font-weight: 800; font-size: 0.84rem; cursor: pointer; font-family: inherit; width: 100%; }
+.dash-btn-ghost:hover { background: rgba(32,59,20,0.1); }
+.dash-tag-card { display: flex; align-items: center; gap: 0.9rem; padding: 1rem 0.3rem; border-bottom: 1px solid rgba(10,29,8,0.07); }
+.dash-tag-card:last-child { border-bottom: none; }
+.dash-tag-ic { width: 40px; height: 40px; border-radius: 12px; background: #e2f2da; display: flex; align-items: center; justify-content: center; font-weight: 800; color: #203b14; }
+.dash-copy-btn { background: none; border: 1px solid rgba(32,59,20,0.2); color: #203b14; font-weight: 800; font-size: 0.74rem; border-radius: 999px; padding: 0.35rem 0.9rem; cursor: pointer; font-family: inherit; }
+.dash-copy-btn:hover { background: #e2f2da; }
+.dash-qr { width: 120px; height: 120px; border-radius: 16px; background: #203b14; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.dash-toggle { width: 46px; height: 26px; border-radius: 999px; background: rgba(10,29,8,0.12); border: none; position: relative; cursor: pointer; transition: background .25s; flex-shrink: 0; }
+.dash-toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: left .25s; box-shadow: 0 2px 6px rgba(10,29,8,0.2); }
+.dash-toggle.is-on { background: #203b14; }
+.dash-toggle.is-on::after { left: 23px; }
+.dash-set-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.95rem 0.2rem; border-bottom: 1px solid rgba(10,29,8,0.07); }
+.dash-set-row:last-child { border-bottom: none; }
+.dash-vault-bar { height: 10px; border-radius: 99px; background: rgba(10,29,8,0.07); overflow: hidden; }
+.dash-vault-bar > i { display: block; height: 100%; background: #203b14; border-radius: 99px; transition: width 1s cubic-bezier(.22,1,.36,1); }
+.wallet-hint { font-size: 0.8rem; color: #6b7860; margin-top: 0.5rem; }
+.wallet-hint a { color: #203b14; font-weight: 700; }
+</style>
+</head>
+<body class="dash">
+<div class="dash-shell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="dash-side">
+    <a href="index.html" class="dash-brand" style="text-decoration:none;color:#0a1d08;">
+      <img src="assets/brand/tagiofi-logo-black.png" alt="TagioFi"/>
+      <span>TagioFi</span>
+    </a>
+    <div class="dash-user">
+      <div class="dash-avatar">TF</div>
+      <div>
+        <div class="dash-user-name">My Tag</div>
+        <div class="dash-user-sub" data-wallet-addr>Not connected</div>
+      </div>
+    </div>
+    <div class="dash-nav-label">Main</div>
+    <a class="dash-link is-active" data-view="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="2"/><rect x="13" y="3" width="8" height="8" rx="2"/><rect x="3" y="13" width="8" height="8" rx="2"/><rect x="13" y="13" width="8" height="8" rx="2"/></svg>Dashboard</a>
+    <a class="dash-link" data-view="tags"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 12v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5z"/><path d="M16 12h4v4h-4a2 2 0 0 1 0-4z"/></svg>My Tags</a>
+    <a class="dash-link" data-view="mix"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 21v-7m0-4V3m8 18v-9m0-4V3m8 18v-5m0-4V3"/><circle cx="4" cy="12" r="2"/><circle cx="12" cy="10" r="2"/><circle cx="20" cy="14" r="2"/></svg>Receive-Mix</a>
+    <a class="dash-link" data-view="links"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg>Pay Links</a>
+    <a class="dash-link" data-view="vault"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>Payroll Vault</a>
+    <a class="dash-link" data-view="receipts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 12h6m-6 4h6M9 8h2m-5 12h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>Receipts</a>
+    <div class="dash-nav-label">Others</div>
+    <a class="dash-link" data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.27.6.9 1 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1z"/></svg>Settings</a>
+    <a class="dash-link" data-view="support"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3m.1 4h.01"/></svg>Support</a>
+    <div class="dash-stake">
+      <img src="assets/brand/tagiofi-logo-black.png" alt="$TGIO"/>
+      <div class="dash-stake-title">Stake $TGIO</div>
+      <div class="dash-stake-sub">Back the registry. Earn settlement fees.</div>
+      <button class="dash-mix-edit" id="stakeBtn" style="margin-top:0.8rem;">Stake</button>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="dash-main">
+    <div class="dash-top">
+      <div class="dash-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12l9-9 9 9M5 10v10h5v-6h4v6h5V10"/></svg>
+        <span id="dashViewTitle">Dashboard</span>
+      </div>
+      <div class="dash-search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+        <input type="text" placeholder="Search tags or receipts…"/>
+      </div>
+      <button class="dash-wallet-btn" data-wallet-connect><span class="wallet-label">Connect Wallet</span></button>
+    </div>
+
+    <!-- ====== VIEW: OVERVIEW ====== -->
+    <section class="dash-view is-active" data-view="overview">
+      <div class="dash-grid">
+        <div class="dash-card"><div class="dash-stat-label">Total Received</div><div class="dash-stat-value">$58,154.07<span class="dash-stat-delta up">+2.5%</span></div></div>
+        <div class="dash-card"><div class="dash-stat-label">Portfolio Value</div><div class="dash-stat-value">$61,204.55<span class="dash-stat-delta up">+2.9%</span></div></div>
+        <div class="dash-card"><div class="dash-stat-label">Fast-Path Savings</div><div class="dash-stat-value">$1,270.56<span class="dash-stat-delta up">0-fee</span></div></div>
+        <div class="dash-card"><div class="dash-stat-label">$TGIO Staked</div><div class="dash-stat-value" id="stakedAmount">10,795.12<span class="dash-stat-delta up">+8%</span></div></div>
+      </div>
+      <div class="dash-mid">
+        <div class="dash-card">
+          <div class="dash-card-head">
+            <div class="dash-card-title">Settlement volume</div>
+            <div class="dash-pill">Weekly</div>
+          </div>
+          <div class="dash-big-number" id="dashTotal">$236,788.12</div>
+          <div class="dash-tabs">
+            <div class="dash-tab is-active" data-series="0">Received</div>
+            <div class="dash-tab" data-series="1">Converted</div>
+            <div class="dash-tab" data-series="2">Direct (free path)</div>
+          </div>
+          <div class="dash-chart" id="dashChart"></div>
+          <div class="dash-chart-months" id="dashMonths"></div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head">
+            <div class="dash-card-title">Scheduled payouts</div>
+            <button class="dash-pill" id="addPayoutBtn" style="border:none;font:inherit;">+</button>
+          </div>
+          <div class="dash-list">
+            <div class="dash-list-row">
+              <div class="dash-asset-ic">RV</div>
+              <div><div class="dash-list-name">Roster Vault · Crew Alpha</div><div class="dash-list-sub">Next run Aug 15, 2026 · per-member mixes</div></div>
+              <div class="dash-list-right"><div class="dash-list-amt">$9,600.00</div><span class="dash-status">Scheduled</span></div>
+            </div>
+            <div class="dash-list-row">
+              <div class="dash-asset-ic">PL</div>
+              <div><div class="dash-list-name">Pay-Link #1042 · Invoice</div><div class="dash-list-sub">Expires Sep 01, 2026 · settles to your mix</div></div>
+              <div class="dash-list-right"><div class="dash-list-amt">$1,250.00</div><span class="dash-status">Open</span></div>
+            </div>
+            <div class="dash-list-row">
+              <div class="dash-asset-ic">SP</div>
+              <div><div class="dash-list-name">Split Tag · Studio Retainer</div><div class="dash-list-sub">3 recipients · splits Σ=100%</div></div>
+              <div class="dash-list-right"><div class="dash-list-amt">$4,800.00</div><span class="dash-status">Recurring</span></div>
+            </div>
+          </div>
+          <button class="dash-btn-ghost" id="viewAllPayouts" style="margin-top:1rem;">View All</button>
+        </div>
+      </div>
+      <div class="dash-bottom">
+        <div class="dash-card">
+          <div class="dash-card-head">
+            <div class="dash-card-title">Receive-mix</div>
+            <div class="dash-pill">Active</div>
+          </div>
+          <div class="dash-donut-wrap">
+            <svg class="dash-donut" width="130" height="130" viewBox="0 0 120 120">
+              <circle cx="60" cy="60" r="48" stroke="rgba(10,29,8,0.08)"></circle>
+              <circle cx="60" cy="60" r="48" stroke="#203b14" id="donutA"></circle>
+              <circle cx="60" cy="60" r="48" stroke="#8fae74" id="donutB"></circle>
+              <circle cx="60" cy="60" r="48" stroke="#c9dcb6" id="donutC"></circle>
+            </svg>
+            <div class="dash-legend" id="mixLegend">
+              <div><i style="background:#203b14;"></i>SPY<b>60%</b></div>
+              <div><i style="background:#8fae74;"></i>USDG<b>30%</b></div>
+              <div><i style="background:#c9dcb6;"></i>GLD<b>10%</b></div>
+            </div>
+          </div>
+          <button class="dash-mix-edit" id="editMixBtn">Edit Receive-Mix</button>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head">
+            <div class="dash-card-title">Receipts</div>
+            <button class="dash-pill" id="allActivityBtn" style="border:none;font:inherit;">All activity</button>
+          </div>
+          <div class="dash-tx-head"><div>Payer</div><div>Type</div><div>Amount</div><div>Received as</div></div>
+          <div id="dashTx">
+            <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">0x</div>0x4f…9a2c</div><div class="dash-muted">Split payout</div><div>+$500.00</div><div class="dash-muted">60% SPY · 30% USDG · 10% GLD</div></div>
+            <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">@t</div>@tips.tag</div><div class="dash-muted">Tip</div><div>+$25.00</div><div class="dash-muted">USDG (safe-settle notice)</div></div>
+            <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">PL</div>Pay-Link #1041</div><div class="dash-muted">Invoice</div><div>+$1,835.00</div><div class="dash-muted">60% SPY · 30% USDG · 10% GLD</div></div>
+            <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">RV</div>Roster Vault</div><div class="dash-muted">Payroll</div><div>+$3,200.00</div><div class="dash-muted">100% USDG (direct · free)</div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== VIEW: MY TAGS ====== -->
+    <section class="dash-view" data-view="tags">
+      <div class="dash-view-title">My Tags</div>
+      <p class="dash-view-sub">Every tag you own or receive through. Tags live in the chain’s registry, TagioFi reads them and settles above the standard. Splits always total 100%.</p>
+      <div class="dash-card">
+        <div class="dash-tag-card">
+          <div class="dash-tag-ic">@</div>
+          <div><div class="dash-list-name">@yourname</div><div class="dash-list-sub">Owner · expires Aug 2031 · primary receive tag</div></div>
+          <div class="dash-list-right" style="display:flex;align-items:center;gap:0.6rem;"><span class="dash-status">Active</span><button class="dash-copy-btn" data-copy="tagio.fi/@yourname">Copy link</button></div>
+        </div>
+        <div class="dash-tag-card">
+          <div class="dash-tag-ic">@</div>
+          <div><div class="dash-list-name">@studio</div><div class="dash-list-sub">Split tag · 4 members · per-member mixes</div></div>
+          <div class="dash-list-right" style="display:flex;align-items:center;gap:0.6rem;"><span class="dash-status">Active</span><button class="dash-copy-btn" data-copy="tagio.fi/@studio">Copy link</button></div>
+        </div>
+        <div class="dash-tag-card">
+          <div class="dash-tag-ic">@</div>
+          <div><div class="dash-list-name">@tips.tag</div><div class="dash-list-sub">Stream overlay tag · settle to 100% USDG</div></div>
+          <div class="dash-list-right" style="display:flex;align-items:center;gap:0.6rem;"><span class="dash-status">Active</span><button class="dash-copy-btn" data-copy="tagio.fi/@tips.tag">Copy link</button></div>
+        </div>
+      </div>
+      <div class="dash-card" style="margin-top:1rem;">
+        <div class="dash-card-head"><div class="dash-card-title">Register a new tag</div><span class="dash-pill">ERC-721 registry</span></div>
+        <div class="dash-form-row">
+          <div class="dash-field"><span class="dash-field-lbl">Tag name</span><input id="newTagName" type="text" placeholder="yourtag"/></div>
+          <div class="dash-field" style="max-width:180px;"><span class="dash-field-lbl">Duration</span><select id="newTagDur"><option>1 year</option><option>3 years</option><option>5 years</option></select></div>
+        </div>
+        <button class="dash-mix-edit" id="registerTagBtn">Register tag</button>
+        <div class="wallet-hint" id="tagWalletHint">Connect your wallet to register a tag on-chain.</div>
+      </div>
+    </section>
+
+    <!-- ====== VIEW: RECEIVE-MIX ====== -->
+    <section class="dash-view" data-view="mix">
+      <div class="dash-view-title">Receive-Mix</div>
+      <p class="dash-view-sub">The receive-mix is law. Every payment that hits your tag resolves, honors this mix exactly, and delivers to your wallet, atomically, with zero custody. Up to 8 legs, always totaling 100%.</p>
+      <div class="dash-mid" style="grid-template-columns:1.4fr 1fr;">
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Mix legs</div><span class="dash-pill">≤ 8 legs</span></div>
+          <div id="mixLegs"></div>
+          <button class="dash-btn-ghost" id="addLegBtn">+ Add leg</button>
+          <div class="mix-total" id="mixTotal">Total: <span id="mixTotalVal">100%</span></div>
+          <button class="dash-mix-edit" id="saveMixBtn">Save Receive-Mix</button>
+          <div class="wallet-hint">Saved mixes are keyed to your connected wallet and portable across every tag you own. An asset that turns unverified auto-falls to USDG with a notice.</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Verified assets</div><span class="dash-pill">Canonical registry</span></div>
+          <div class="dash-list">
+            <div class="dash-list-row"><div class="dash-asset-ic">SP</div><div><div class="dash-list-name">SPY</div><div class="dash-list-sub">Tokenized equity · deep liquidity</div></div><div class="dash-list-right"><span class="dash-status">Verified</span></div></div>
+            <div class="dash-list-row"><div class="dash-asset-ic">US</div><div><div class="dash-list-name">USDG</div><div class="dash-list-sub">USD gold-backed stablecoin</div></div><div class="dash-list-right"><span class="dash-status">Verified</span></div></div>
+            <div class="dash-list-row"><div class="dash-asset-ic">GL</div><div><div class="dash-list-name">GLD</div><div class="dash-list-sub">Tokenized gold</div></div><div class="dash-list-right"><span class="dash-status">Verified</span></div></div>
+            <div class="dash-list-row"><div class="dash-asset-ic">TG</div><div><div class="dash-list-name">$TGIO</div><div class="dash-list-sub">Settlement fee share token</div></div><div class="dash-list-right"><span class="dash-status">Verified</span></div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== VIEW: PAY LINKS ====== -->
+    <section class="dash-view" data-view="links">
+      <div class="dash-view-title">Pay Links</div>
+      <p class="dash-view-sub">Bind an invoice to your tag: amount, memo, expiry. Anyone pays it with any token they hold; it settles into your mix and flips paid on-chain.</p>
+      <div class="dash-mid" style="grid-template-columns:1fr 1fr;">
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Create pay-link</div><span class="dash-pill">PayLinks.sol</span></div>
+          <div class="dash-form-row">
+            <div class="dash-field"><span class="dash-field-lbl">Amount (USD)</span><input id="plAmount" type="number" placeholder="1250.00" min="0" step="0.01"/></div>
+            <div class="dash-field"><span class="dash-field-lbl">Expiry</span><select id="plExpiry"><option>7 days</option><option>30 days</option><option>Never</option></select></div>
+          </div>
+          <div class="dash-form-row">
+            <div class="dash-field"><span class="dash-field-lbl">Memo</span><input id="plMemo" type="text" placeholder="Invoice #1043"/></div>
+          </div>
+          <button class="dash-mix-edit" id="createLinkBtn">Create pay-link</button>
+          <div class="wallet-hint" id="linkWalletHint">Connect your wallet to create links that settle on-chain.</div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Your links</div><span class="dash-pill" id="linkCount">2 open</span></div>
+          <div class="dash-list" id="linkList">
+            <div class="dash-list-row"><div class="dash-asset-ic">PL</div><div><div class="dash-list-name">tagio.fi/pay/1042</div><div class="dash-list-sub">Invoice · $1,250.00 · expires Sep 01</div></div><div class="dash-list-right" style="display:flex;gap:0.5rem;align-items:center;"><span class="dash-status">Open</span><button class="dash-copy-btn" data-copy="tagio.fi/pay/1042">Copy</button></div></div>
+            <div class="dash-list-row"><div class="dash-asset-ic">PL</div><div><div class="dash-list-name">tagio.fi/pay/1041</div><div class="dash-list-sub">Deposit · $1,835.00 · settled to mix</div></div><div class="dash-list-right" style="display:flex;gap:0.5rem;align-items:center;"><span class="dash-status">Paid ✓</span><button class="dash-copy-btn" data-copy="tagio.fi/pay/1041">Copy</button></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="dash-card" style="margin-top:1rem;display:flex;align-items:center;gap:1.6rem;">
+        <div class="dash-qr"><svg width="76" height="76" viewBox="0 0 54 54"><g fill="#e2f2da"><rect x="4" y="4" width="16" height="16" rx="3"/><rect x="34" y="4" width="16" height="16" rx="3"/><rect x="4" y="34" width="16" height="16" rx="3"/><rect x="34" y="34" width="6" height="6"/><rect x="44" y="34" width="6" height="6"/><rect x="34" y="44" width="6" height="6"/><rect x="44" y="44" width="6" height="6"/><rect x="24" y="24" width="6" height="6"/><rect x="24" y="4" width="6" height="6"/><rect x="4" y="24" width="6" height="6"/><rect x="24" y="44" width="6" height="6"/><rect x="44" y="24" width="6" height="6"/></g></svg></div>
+        <div>
+          <div class="dash-card-title" style="margin-bottom:0.3rem;">Storefront QR</div>
+          <p class="dash-muted" style="max-width:34rem;line-height:1.6;">Print it once. Every scan pays your tag and lands as your receive-mix, no hardware, no second transaction.</p>
+        </div>
+        <button class="dash-copy-btn" style="margin-left:auto;" id="downloadQrBtn">Download QR</button>
+      </div>
+    </section>
+
+    <!-- ====== VIEW: PAYROLL VAULT ====== -->
+    <section class="dash-view" data-view="vault">
+      <div class="dash-view-title">Payroll Vault</div>
+      <p class="dash-view-sub">Fund a budget, set the roster and cycle, payouts run permissionlessly, 200 per transaction, each settling through the member’s own receive-mix. Zero custody, always.</p>
+      <div class="dash-mid" style="grid-template-columns:1.4fr 1fr;">
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Crew Alpha · roster</div><span class="dash-pill">Weekly cycle</span></div>
+          <div class="dash-list" id="rosterList">
+            <div class="dash-list-row"><div class="dash-asset-ic">MA</div><div><div class="dash-list-name">Member A · 0x4f…9a2c</div><div class="dash-list-sub">60% SPY · 40% USDG</div></div><div class="dash-list-right"><div class="dash-list-amt">$2,400 / cycle</div></div></div>
+            <div class="dash-list-row"><div class="dash-asset-ic">MB</div><div><div class="dash-list-name">Member B · 0x81…77bd</div><div class="dash-list-sub">100% USDG · direct, free</div></div><div class="dash-list-right"><div class="dash-list-amt">$2,400 / cycle</div></div></div>
+            <div class="dash-list-row"><div class="dash-asset-ic">MC</div><div><div class="dash-list-name">Member C · 0x33…e90f</div><div class="dash-list-sub">75% SPY · 25% GLD</div></div><div class="dash-list-right"><div class="dash-list-amt">$2,400 / cycle</div></div></div>
+            <div class="dash-list-row"><div class="dash-asset-ic">MD</div><div><div class="dash-list-name">Member D · 0xae…12c4</div><div class="dash-list-sub">90% USDG · 10% $TGIO</div></div><div class="dash-list-right"><div class="dash-list-amt">$2,400 / cycle</div></div></div>
+          </div>
+          <button class="dash-btn-ghost" id="addMemberBtn" style="margin-top:1rem;">+ Add member</button>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Vault status</div><span class="dash-pill">On schedule</span></div>
+          <div class="dash-stat-label" style="margin-bottom:0.4rem;">Budget remaining</div>
+          <div class="dash-big-number" style="font-size:1.6rem;margin-bottom:0.8rem;" id="vaultBudget">$38,400</div>
+          <div class="dash-vault-bar" style="margin-bottom:1.2rem;"><i id="vaultBar" style="width:0%;"></i></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Next run</div><div class="dash-list-sub">permissionless trigger</div></div><div class="dash-list-amt">Aug 15, 2026</div></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Cycle length</div><div class="dash-list-sub">7 days</div></div><div class="dash-list-amt">Weekly</div></div>
+          <button class="dash-mix-edit" id="runVaultBtn" style="margin-top:1.2rem;">Run payout now</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ====== VIEW: RECEIPTS ====== -->
+    <section class="dash-view" data-view="receipts">
+      <div class="dash-view-title">Receipts</div>
+      <p class="dash-view-sub">Every settlement emits an on-chain receipt, payer, tag, legs, fee. Delivered balances stay correct across corporate actions.</p>
+      <div class="dash-card">
+        <div class="dash-tx-head"><div>Payer</div><div>Type</div><div>Amount</div><div>Received as</div></div>
+        <div id="receiptsFull">
+          <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">0x</div>0x4f…9a2c</div><div class="dash-muted">Split payout</div><div>+$500.00</div><div class="dash-muted">60% SPY · 30% USDG · 10% GLD</div></div>
+          <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">@t</div>@tips.tag</div><div class="dash-muted">Tip</div><div>+$25.00</div><div class="dash-muted">USDG (safe-settle notice)</div></div>
+          <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">PL</div>Pay-Link #1041</div><div class="dash-muted">Invoice</div><div>+$1,835.00</div><div class="dash-muted">60% SPY · 30% USDG · 10% GLD</div></div>
+          <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">RV</div>Roster Vault</div><div class="dash-muted">Payroll</div><div>+$3,200.00</div><div class="dash-muted">100% USDG (direct · free)</div></div>
+          <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">0x</div>0x81…77bd</div><div class="dash-muted">Storefront QR</div><div>+$86.40</div><div class="dash-muted">60% SPY · 30% USDG · 10% GLD</div></div>
+          <div class="dash-tx-row"><div class="dash-tx-who"><div class="dash-avatar">0x</div>0x33…e90f</div><div class="dash-muted">Tag payment</div><div>+$1,120.00</div><div class="dash-muted">100% USDG (direct · free)</div></div>
+        </div>
+        <button class="dash-btn-ghost" id="exportCsvBtn" style="margin-top:1rem;">Export CSV</button>
+      </div>
+    </section>
+
+    <!-- ====== VIEW: SETTINGS ====== -->
+    <section class="dash-view" data-view="settings">
+      <div class="dash-view-title">Settings</div>
+      <p class="dash-view-sub">Settlement defaults for every tag tied to this wallet. Changes are signature-gated, nobody can redirect your mix but you.</p>
+      <div class="dash-mid" style="grid-template-columns:1fr 1fr;">
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Settlement</div></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Default fallback asset</div><div class="dash-list-sub">Legs that can’t fill land here with a notice</div></div><span class="dash-status">USDG</span></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Max slippage per leg</div><div class="dash-list-sub">Bounded on-chain, enforced by the router</div></div><span class="dash-status">0.50%</span></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Chainlink staleness guard</div><div class="dash-list-sub">Safe-settle when the oracle pauses</div></div><button class="dash-toggle is-on" data-toggle></button></div>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Notifications</div></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Payment settled</div><div class="dash-list-sub">Every receipt, as it lands</div></div><button class="dash-toggle is-on" data-toggle></button></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Safe-settle notices</div><div class="dash-list-sub">When a leg falls back to USDG</div></div><button class="dash-toggle is-on" data-toggle></button></div>
+          <div class="dash-set-row"><div><div class="dash-list-name">Payroll runs</div><div class="dash-list-sub">Roster vault cycle confirmations</div></div><button class="dash-toggle" data-toggle></button></div>
+        </div>
+      </div>
+      <div class="dash-card" style="margin-top:1rem;">
+        <div class="dash-card-head"><div class="dash-card-title">Network</div><span class="dash-pill">Robinhood Chain</span></div>
+        <div class="dash-set-row"><div><div class="dash-list-name">Chain ID 4663</div><div class="dash-list-sub">Mainnet · testnet 46630</div></div><button class="dash-copy-btn" id="switchNetworkBtn">Switch network</button></div>
+      </div>
+    </section>
+
+    <!-- ====== VIEW: SUPPORT ====== -->
+    <section class="dash-view" data-view="support">
+      <div class="dash-view-title">Support</div>
+      <p class="dash-view-sub">Straight answers, straight from the docs, and a direct line to the team when you need one.</p>
+      <div class="dash-mid" style="grid-template-columns:1fr 1fr;">
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Common questions</div></div>
+          <div class="dash-list">
+            <div class="dash-list-row"><div><div class="dash-list-name">What assets can I receive?</div><div class="dash-list-sub">Registry-verified only, tokenized equities/ETFs, USDG, tokenized metals. Up to 8 legs totaling 100%.</div></div></div>
+            <div class="dash-list-row"><div><div class="dash-list-name">What if a swap can’t fill?</div><div class="dash-list-sub">That leg safe-settles in USDG with an on-chain notice. Payments never strand.</div></div></div>
+            <div class="dash-list-row"><div><div class="dash-list-name">Is TagioFi custodial?</div><div class="dash-list-sub">No, atomic settlement, zero residue, nothing held. Ever.</div></div></div>
+          </div>
+          <a href="docs.html" style="text-decoration:none;"><button class="dash-btn-ghost" style="margin-top:1rem;">Read the full docs</button></a>
+        </div>
+        <div class="dash-card">
+          <div class="dash-card-head"><div class="dash-card-title">Message the team</div></div>
+          <div class="dash-form-row"><div class="dash-field"><span class="dash-field-lbl">Subject</span><input id="supSubject" type="text" placeholder="Settlement question"/></div></div>
+          <div class="dash-form-row"><div class="dash-field"><span class="dash-field-lbl">Message</span><input id="supMsg" type="text" placeholder="Tell us what happened…"/></div></div>
+          <button class="dash-mix-edit" id="sendSupportBtn">Send message</button>
+          <div class="wallet-hint">Tokenized stock assets are region-gated debt securities, unavailable to US persons, always disclosed at mix-setup.</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="dash-toast" id="dashToast">Done</div>
+
+<script src="assets/js/wallet.js" type="text/javascript"></script>
+<script>
+(function () {
+  /* ---------- toast ---------- */
+  var toast = document.getElementById('dashToast'), toastTimer;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('is-shown');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove('is-shown'); }, 2600);
+  }
+
+  /* ---------- view switching ---------- */
+  var titles = { overview: 'Dashboard', tags: 'My Tags', mix: 'Receive-Mix', links: 'Pay Links', vault: 'Payroll Vault', receipts: 'Receipts', settings: 'Settings', support: 'Support' };
+  function showView(name) {
+    document.querySelectorAll('.dash-view').forEach(function (v) { v.classList.toggle('is-active', v.getAttribute('data-view') === name); });
+    document.querySelectorAll('.dash-link').forEach(function (l) { l.classList.toggle('is-active', l.getAttribute('data-view') === name); });
+    document.getElementById('dashViewTitle').textContent = titles[name] || 'Dashboard';
+    if (name === 'overview') requestAnimationFrame(function () { render(currentSeries); drawDonut(); });
+    if (name === 'vault') setTimeout(function () { document.getElementById('vaultBar').style.width = '80%'; }, 200);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+  document.querySelectorAll('.dash-link').forEach(function (l) {
+    l.addEventListener('click', function (e) { e.preventDefault(); showView(l.getAttribute('data-view')); });
+  });
+
+  /* ---------- overview chart ---------- */
+  var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var series = [
+    { total: '$236,788.12', hot: 6, data: [22,30,26,38,34,48,92,58,44,50,40,55] },
+    { total: '$141,072.88', hot: 6, data: [14,22,18,28,24,36,74,44,32,38,30,41] },
+    { total: '$95,715.24',  hot: 7, data: [18,16,20,24,22,30,46,60,36,30,26,34] }
+  ];
+  var chart = document.getElementById('dashChart');
+  var monthsEl = document.getElementById('dashMonths');
+  var totalEl = document.getElementById('dashTotal');
+  var currentSeries = 0;
+  function fmt(v) { return '$' + v.toFixed(2) + 'k'; }
+  function render(idx) {
+    currentSeries = idx;
+    var s = series[idx];
+    totalEl.textContent = s.total;
+    chart.innerHTML = ''; monthsEl.innerHTML = '';
+    s.data.forEach(function (v, i) {
+      var bar = document.createElement('div');
+      bar.className = 'dash-bar' + (i === s.hot ? ' is-hot' : '');
+      bar.style.height = v + '%';
+      bar.style.animationDelay = (i * 45) + 'ms';
+      var tip = document.createElement('span');
+      tip.className = 'dash-bar-tip';
+      tip.textContent = fmt(v);
+      bar.appendChild(tip);
+      chart.appendChild(bar);
+      var m = document.createElement('span');
+      m.textContent = months[i];
+      monthsEl.appendChild(m);
+    });
+  }
+  document.querySelectorAll('.dash-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.dash-tab').forEach(function (t) { t.classList.remove('is-active'); });
+      tab.classList.add('is-active');
+      render(parseInt(tab.getAttribute('data-series'), 10));
+    });
+  });
+
+  /* ---------- donut (driven by the saved mix) ---------- */
+  var DONUT_COLORS = ['#203b14', '#8fae74', '#c9dcb6', '#4a6b35'];
+  function drawDonut() {
+    var mix = getMix();
+    var C = 2 * Math.PI * 48;
+    var circles = [document.getElementById('donutA'), document.getElementById('donutB'), document.getElementById('donutC')];
+    var legend = document.getElementById('mixLegend');
+    var off = 0;
+    circles.forEach(function (c, i) {
+      var leg = mix[i];
+      var frac = leg ? leg.pct / 100 : 0;
+      c.setAttribute('stroke', DONUT_COLORS[i]);
+      c.style.strokeDasharray = (frac * C) + ' ' + C;
+      c.style.strokeDashoffset = -off * C;
+      c.style.transition = 'stroke-dasharray 1s cubic-bezier(.22,1,.36,1), stroke-dashoffset 1s cubic-bezier(.22,1,.36,1)';
+      off += frac;
+    });
+    legend.innerHTML = mix.map(function (leg, i) {
+      return '<div><i style="background:' + DONUT_COLORS[i % DONUT_COLORS.length] + ';"></i>' + leg.asset + '<b>' + leg.pct + '%</b></div>';
+    }).join('');
+  }
+
+  /* ---------- receive-mix (editable, persisted) ---------- */
+  var ASSETS = ['SPY', 'USDG', 'GLD', '$TGIO'];
+  function getMix() {
+    try { return JSON.parse(localStorage.getItem('tagiofi_mix')) || [{asset:'SPY',pct:60},{asset:'USDG',pct:30},{asset:'GLD',pct:10}]; }
+    catch (e) { return [{asset:'SPY',pct:60},{asset:'USDG',pct:30},{asset:'GLD',pct:10}]; }
+  }
+  var mixLegsEl = document.getElementById('mixLegs');
+  function renderMixEditor() {
+    var mix = getMix();
+    mixLegsEl.innerHTML = '';
+    mix.forEach(function (leg, i) {
+      var row = document.createElement('div');
+      row.className = 'mix-leg';
+      row.innerHTML = '<select>' + ASSETS.map(function (a) { return '<option' + (a === leg.asset ? ' selected' : '') + '>' + a + '</option>'; }).join('') + '</select>' +
+        '<input type="number" min="0" max="100" value="' + leg.pct + '"/>' +
+        '<button class="mix-remove" title="Remove leg">×</button>';
+      row.querySelector('select').addEventListener('change', syncFromEditor);
+      row.querySelector('input').addEventListener('input', syncFromEditor);
+      row.querySelector('.mix-remove').addEventListener('click', function () {
+        var m = getMix(); m.splice(i, 1); localStorage.setItem('tagiofi_mix', JSON.stringify(m));
+        renderMixEditor(); drawDonut();
+      });
+      mixLegsEl.appendChild(row);
+    });
+    updateMixTotal();
+  }
+  function syncFromEditor() {
+    var legs = [];
+    mixLegsEl.querySelectorAll('.mix-leg').forEach(function (row) {
+      legs.push({ asset: row.querySelector('select').value, pct: Math.max(0, Math.min(100, parseInt(row.querySelector('input').value) || 0)) });
+    });
+    localStorage.setItem('tagiofi_mix', JSON.stringify(legs));
+    updateMixTotal();
+  }
+  function updateMixTotal() {
+    var total = getMix().reduce(function (s, l) { return s + l.pct; }, 0);
+    var el = document.getElementById('mixTotal'), val = document.getElementById('mixTotalVal');
+    val.textContent = total + '%';
+    el.classList.toggle('is-good', total === 100);
+    el.classList.toggle('is-bad', total !== 100);
+  }
+  document.getElementById('addLegBtn').addEventListener('click', function () {
+    var m = getMix();
+    if (m.length >= 8) { showToast('Mixes are capped at 8 legs'); return; }
+    m.push({ asset: ASSETS.find(function (a) { return !m.some(function (l) { return l.asset === a; }); }) || 'USDG', pct: 0 });
+    localStorage.setItem('tagiofi_mix', JSON.stringify(m));
+    renderMixEditor();
+  });
+  document.getElementById('saveMixBtn').addEventListener('click', function () {
+    var total = getMix().reduce(function (s, l) { return s + l.pct; }, 0);
+    if (total !== 100) { showToast('Mix must total exactly 100%, currently ' + total + '%'); return; }
+    drawDonut();
+    showToast('Receive-mix saved, next payment settles to the new mix');
+  });
+  document.getElementById('editMixBtn').addEventListener('click', function () { showView('mix'); });
+
+  /* ---------- copy buttons ---------- */
+  document.querySelectorAll('[data-copy]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var t = b.getAttribute('data-copy');
+      if (navigator.clipboard) navigator.clipboard.writeText(t);
+      showToast('Copied: ' + t);
+    });
+  });
+
+  /* ---------- pay links ---------- */
+  var linkSeq = 1043;
+  document.getElementById('createLinkBtn').addEventListener('click', function () {
+    var amt = document.getElementById('plAmount').value;
+    var memo = document.getElementById('plMemo').value || 'Payment';
+    if (!amt || parseFloat(amt) <= 0) { showToast('Enter an amount for the pay-link'); return; }
+    var id = linkSeq++;
+    var row = document.createElement('div');
+    row.className = 'dash-list-row';
+    row.innerHTML = '<div class="dash-asset-ic">PL</div><div><div class="dash-list-name">tagio.fi/pay/' + id + '</div><div class="dash-list-sub">' + memo + ' · $' + parseFloat(amt).toFixed(2) + ' · ' + document.getElementById('plExpiry').value + '</div></div><div class="dash-list-right" style="display:flex;gap:0.5rem;align-items:center;"><span class="dash-status">Open</span><button class="dash-copy-btn">Copy</button></div>';
+    row.querySelector('.dash-copy-btn').addEventListener('click', function () {
+      if (navigator.clipboard) navigator.clipboard.writeText('tagio.fi/pay/' + id);
+      showToast('Copied: tagio.fi/pay/' + id);
+    });
+    document.getElementById('linkList').prepend(row);
+    var open = document.querySelectorAll('#linkList .dash-status').length;
+    document.getElementById('linkCount').textContent = open + ' total';
+    document.getElementById('plAmount').value = ''; document.getElementById('plMemo').value = '';
+    showToast('Pay-link created, settles into your receive-mix when paid');
+  });
+  document.getElementById('downloadQrBtn').addEventListener('click', function () { showToast('QR downloaded, points at @yourname'); });
+
+  /* ---------- tags ---------- */
+  document.getElementById('registerTagBtn').addEventListener('click', function () {
+    var name = document.getElementById('newTagName').value.trim();
+    if (!name) { showToast('Pick a tag name first'); return; }
+    if (!localStorage.getItem('tagiofi_wallet')) { showToast('Connect your wallet to register a tag'); return; }
+    document.getElementById('newTagName').value = '';
+    showToast('@' + name.toLowerCase() + ' registered, resolver pinned, active immediately');
+  });
+
+  /* ---------- vault ---------- */
+  document.getElementById('addMemberBtn').addEventListener('click', function () { showToast('Member added to roster, they set their own mix'); });
+  document.getElementById('runVaultBtn').addEventListener('click', function () {
+    var b = document.getElementById('vaultBudget');
+    b.textContent = '$28,800';
+    document.getElementById('vaultBar').style.width = '60%';
+    showToast('Payout run complete, 4 members paid in their own mixes');
+  });
+
+  /* ---------- receipts ---------- */
+  document.getElementById('allActivityBtn').addEventListener('click', function () { showView('receipts'); });
+  document.getElementById('exportCsvBtn').addEventListener('click', function () { showToast('Receipts exported, tx hashes included'); });
+
+  /* ---------- payouts shortcuts ---------- */
+  document.getElementById('addPayoutBtn').addEventListener('click', function () { showView('links'); });
+  document.getElementById('viewAllPayouts').addEventListener('click', function () { showView('vault'); });
+
+  /* ---------- settings ---------- */
+  document.querySelectorAll('[data-toggle]').forEach(function (t) {
+    t.addEventListener('click', function () {
+      t.classList.toggle('is-on');
+      showToast(t.classList.contains('is-on') ? 'Enabled' : 'Disabled');
+    });
+  });
+  document.getElementById('switchNetworkBtn').addEventListener('click', async function () {
+    if (!window.ethereum) { showToast('MetaMask not detected, install it to switch networks'); return; }
+    try {
+      await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x1237' }] });
+      showToast('Switched to Robinhood Chain (4663)');
+    } catch (e) {
+      if (e && e.code === 4902) showToast('Robinhood Chain isn’t in MetaMask yet, add chain 4663');
+      else if (e && e.code === 4001) showToast('Network switch cancelled');
+      else showToast('Couldn’t switch network');
+    }
+  });
+
+  /* ---------- support ---------- */
+  document.getElementById('sendSupportBtn').addEventListener('click', function () {
+    var subj = document.getElementById('supSubject').value.trim();
+    if (!subj) { showToast('Add a subject so we can route it'); return; }
+    document.getElementById('supSubject').value = ''; document.getElementById('supMsg').value = '';
+    showToast('Message sent, the team replies within a day');
+  });
+
+  /* ---------- stake ---------- */
+  document.getElementById('stakeBtn').addEventListener('click', function () {
+    if (!localStorage.getItem('tagiofi_wallet')) { showToast('Connect your wallet to stake $TGIO'); return; }
+    var el = document.getElementById('stakedAmount');
+    el.innerHTML = '11,795.12<span class="dash-stat-delta up">+9%</span>';
+    showToast('1,000 $TGIO staked, you now earn a share of settlement fees');
+  });
+
+  /* ---------- receipt search (global) ---------- */
+  var input = document.querySelector('.dash-search input');
+  input.addEventListener('input', function () {
+    var q = input.value.toLowerCase();
+    document.querySelectorAll('#dashTx .dash-tx-row, #receiptsFull .dash-tx-row').forEach(function (row) {
+      row.style.display = row.textContent.toLowerCase().indexOf(q) === -1 ? 'none' : '';
+    });
+    if (q && !document.querySelector('.dash-view[data-view="receipts"]').classList.contains('is-active')) showView('receipts');
+  });
+
+  renderMixEditor();
+  render(0);
+  drawDonut();
+})();
+</script>
+</body>
+</html>
