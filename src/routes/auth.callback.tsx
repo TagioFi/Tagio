@@ -43,7 +43,9 @@ function AuthCallbackPage() {
     }
 
     const token = hash.get("token");
-    const walletAddress = token ? jwtWalletAddress(token) : null;
+    // The JWT is authoritative; the fragment's copy is only a fallback for a
+    // token shaped differently than expected.
+    const walletAddress = token ? (jwtWalletAddress(token) ?? hash.get("walletAddress")) : null;
     if (!token || !walletAddress) {
       setError("That sign-in link was incomplete. Connect X again from the dashboard.");
       return;

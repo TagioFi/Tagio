@@ -10,12 +10,14 @@
  * There is no "skip" path: the dashboard is only reachable in stage `ready`.
  */
 
+import { useQuery } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { useSignMessage } from "wagmi";
 
 import { useWallet } from "@/hooks/useWallet";
 import {
   AUTH_EVENT,
+  ApiError,
   api,
   buildSignInMessage,
   clearAuthSession,
@@ -26,7 +28,7 @@ import {
   setStoredSession,
 } from "@/lib/tagio-api";
 import { robinhoodChain } from "@/lib/wagmi";
-import type { V2Session, V2SignInResponse } from "@/types/tagio-v2";
+import type { V2AuthMeResponse, V2Session, V2SignInResponse } from "@/types/tagio-v2";
 
 export type AuthStage =
   /** Waiting on hydration or on wagmi restoring a previous connection. */
@@ -158,13 +160,38 @@ export function useTagioAuth(): TagioAuth {
     }
   }, [address, chainId, signMessageAsync]);
 
+  // The API's own view of the token. It settles two things the browser can't:
+  // whether the JWT is still accepted, and whether the wallet's X binding is
+  // still in place (someone can revoke TagioFi's access from x.com).
+  const me = useQuery({
+    queryKey: ["v2-auth-me", session?.walletAddress?.toLowerCase()],
+    queryFn: () => api.get<V2AuthMeResponse>("/v2/auth/me"),
+    enabled: Boolean(session),
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (!(me.error instanceof ApiError)) return;
+    // Only an outright rejection ends the session — a 5xx or an offline API
+    // must not sign anyone out.
+    if (me.error.status !== 401 && me.error.status !== 403) return;
+    clearAuthSession();
+    setSession(null);
+  }, [me.error]);
+
   const signOut = useCallback(() => {
     clearAuthSession();
     setSession(null);
     setError(null);
   }, []);
 
-  const authed = Boolean(session && address && sameWallet(address, session.walletAddress));
+  // A confirmed-unlinked wallet drops back to step 2; anything else (loading,
+  // error, endpoint missing) leaves the local session alone.
+  const linkRevoked = me.data?.isLinked === false;
+  const authed = Boolean(
+    session && address && sameWallet(address, session.walletAddress) && !linkRevoked,
+  );
 
   // Holding a session with no address yet means the effect above is still
   // deciding whether this is a reconnect or a real disconnect. Show the
@@ -189,7 +216,9 @@ export function useTagioAuth(): TagioAuth {
     isConnected,
     isWrongNetwork,
     session: authed ? session : null,
-    xHandle: authed ? (session?.xHandle ?? null) : null,
+    // Prefer the API's copy: a session stored before a re-link would otherwise
+    // show a stale username.
+    xHandle: authed ? (me.data?.xHandle ?? session?.xHandle ?? null) : null,
     error,
     connectX,
     signOut,

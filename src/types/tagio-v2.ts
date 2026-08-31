@@ -272,3 +272,14 @@ export interface V2Session {
   /** JWT expiry in epoch ms; null when the token carried no `exp`. */
   expiresAt: number | null;
 }
+
+/** GET /v2/auth/me — the API's own view of the bearer token's session. */
+export interface V2AuthMeResponse {
+  authenticated: boolean;
+  walletAddress: string;
+  xUserId: string | null;
+  xHandle: string | null;
+  /** False when the wallet's X binding is gone — the user must link again. */
+  isLinked: boolean;
+  handles: Array<{ handle: string; display_name: string | null }>;
+}

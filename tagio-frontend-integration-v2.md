@@ -102,10 +102,22 @@ Tags are owned by an EVM address on Robinhood Chain, and ownership is enforced b
 
 Failures come back as `FRONTEND_URL/auth/callback?error=<code>`; `expired_or_invalid_state` and `access_denied` get their own copy.
 
-### C. Session Rules (frontend)
+### C. Step 3 — Claim the X username as a tag
+Immediately after the X hop the dashboard offers the verified username as a tag, because it is the name people already use to mention the receiver.
+
+* Availability is probed with `GET /v2/handles/:handle` — a `404` means free, a `200` means taken.
+* Free → a one-click **Claim @username** that `POST /v2/handles/register`s it (defaults to 100% USDG until a mix is set).
+* Taken by another wallet → the card says so and points at the normal claim form instead of failing at submit.
+* Already owned by this wallet, or not a legal tag (`^[a-z0-9_]{3,32}$`) → the card never appears.
+* The prompt is dismissible (`Not now`) and never blocks the dashboard.
+
+`POST /v2/handles/register` itself refuses a wallet with no verified X identity (`403 { needsXLink: true }`), so this ordering is enforced server-side too.
+
+### D. Session Rules (frontend)
 * The session is keyed to the wallet that signed for it. Disconnecting, or switching accounts in the wallet, clears it immediately — a stale session must never render another address's tags.
 * An expired JWT (`exp` is decoded client-side for display only, never trusted for authorization) drops the session and returns the user to step 2.
 * `src/hooks/useTagioAuth.ts` owns the state machine: `restoring → connect-wallet → link-x → linking → ready`. `<AuthGate>` (`src/components/tf/auth-gate.tsx`) renders the dashboard only in `ready`.
+* `GET /v2/auth/me` is the authority on a live session: a `401`/`403` signs the user out, `isLinked: false` sends them back to step 2, and its `xHandle` wins over the locally stored copy. Network and 5xx failures never sign anyone out.
 * Senders are **not** gated: `/pay/$target` needs no signature and no X account.
 
 ---

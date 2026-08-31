@@ -21,6 +21,7 @@ import {
   useUpdateV2Elections,
   useV2Assets,
   useV2Handle,
+  useV2HandleAvailability,
   useV2HandlesByOwner,
 } from "@/hooks/useTagioV2";
 import { cleanHandle, formatBps, friendlyError, shortAddress } from "@/lib/tagio-api";
@@ -48,6 +49,18 @@ function StudioPage() {
   useEffect(() => {
     if (!activeHandle && handles.length) setActiveHandle(handles[0]!.handle);
   }, [handles, activeHandle]);
+
+  // Offer the verified X username as a tag. Tags are lowercase [a-z0-9_]{3,32}
+  // server-side; X allows 4–15 of the same characters, so the only real
+  // mismatch is case — but a handle that can't be registered is never offered.
+  const [xClaimDismissed, setXClaimDismissed] = useState(false);
+  const xTag = xHandle ? cleanHandle(xHandle).toLowerCase() : "";
+  const showXClaim =
+    isReady &&
+    /^[a-z0-9_]{3,32}$/.test(xTag) &&
+    !xClaimDismissed &&
+    !handlesQuery.isLoading &&
+    !handles.some((item) => item.handle.toLowerCase() === xTag);
 
   return (
     <PageShell>
@@ -89,7 +102,21 @@ function StudioPage() {
           </header>
 
           <AuthGate auth={auth}>
-            <div className="mt-12 grid gap-4 lg:grid-cols-[300px_1fr]">
+            {showXClaim ? (
+              <ClaimXHandleCard
+                candidate={xTag}
+                ownerWallet={address!}
+                onClaimed={(claimed) => {
+                  setActiveHandle(claimed);
+                  setXClaimDismissed(true);
+                }}
+                onDismiss={() => setXClaimDismissed(true)}
+              />
+            ) : null}
+
+            <div
+              className={cn("grid gap-4 lg:grid-cols-[300px_1fr]", showXClaim ? "mt-4" : "mt-12")}
+            >
               <div className="flex flex-col gap-4">
                 <SpotlightCard className="p-6">
                   <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink/40">
@@ -161,6 +188,115 @@ function StudioPage() {
         </div>
       </section>
     </PageShell>
+  );
+}
+
+/* ── Claim your X username ──────────────────────────────────────────────── */
+
+/**
+ * Offered right after the X hop: the verified username is the name people
+ * already use for you, so claiming it as a tag is the obvious first move.
+ * Shown only while the wallet doesn't already own that tag, and it says
+ * plainly when someone else has taken it rather than failing at submit.
+ */
+function ClaimXHandleCard({
+  candidate,
+  ownerWallet,
+  onClaimed,
+  onDismiss,
+}: {
+  candidate: string;
+  ownerWallet: string;
+  onClaimed: (handle: string) => void;
+  onDismiss: () => void;
+}) {
+  const availability = useV2HandleAvailability(candidate);
+  const register = useRegisterV2Handle();
+
+  const taken = availability.data?.available === false;
+  const free = availability.data?.available === true;
+
+  const claim = async () => {
+    try {
+      const created = await register.mutateAsync({ handle: candidate, ownerWallet });
+      onClaimed(created.handle);
+      toast.success(`@${created.handle} is yours`, {
+        description: "It defaults to 100% USDG — set a receive-mix to change that.",
+      });
+    } catch (err) {
+      toast.error("Couldn't claim that tag", { description: friendlyError(err) });
+    }
+  };
+
+  return (
+    <SpotlightCard className="mt-12 p-8">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-5">
+        <div className="min-w-64 flex-1">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-ink/40">
+            <XMark className="size-3" />X connected
+          </div>
+
+          <h2 className="mt-3 text-xl font-extrabold tracking-[-0.03em] text-ink">
+            {taken ? (
+              <>@{candidate} is already claimed</>
+            ) : (
+              <>
+                Claim <span className="text-lime-deep">@{candidate}</span> as your tag
+              </>
+            )}
+          </h2>
+
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-ink/55">
+            {availability.isLoading ? (
+              "Checking whether that tag is still free…"
+            ) : availability.isError ? (
+              friendlyError(availability.error)
+            ) : taken ? (
+              <>
+                Another wallet registered it first. Claim a different tag below — your X account
+                stays linked either way.
+              </>
+            ) : (
+              <>
+                It matches your verified X username, so anyone who can mention you can pay you.
+                Nothing is custodied, and you can set the receive-mix straight after.
+              </>
+            )}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {free ? (
+            <button
+              type="button"
+              onClick={() => void claim()}
+              disabled={register.isPending}
+              className="rounded-full bg-ink px-6 py-2.5 text-sm font-bold text-cream transition-colors hover:bg-ink/85 disabled:opacity-45"
+            >
+              {register.isPending ? "Claiming…" : `Claim @${candidate}`}
+            </button>
+          ) : null}
+
+          {availability.isError ? (
+            <button
+              type="button"
+              onClick={() => void availability.refetch()}
+              className="rounded-full border border-ink/15 px-4 py-2.5 text-sm font-semibold text-ink/65 transition-colors hover:border-ink/30 hover:text-ink"
+            >
+              Try again
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="rounded-full px-4 py-2.5 text-sm font-semibold text-ink/45 transition-colors hover:text-ink"
+          >
+            {taken ? "Dismiss" : "Not now"}
+          </button>
+        </div>
+      </div>
+    </SpotlightCard>
   );
 }
 

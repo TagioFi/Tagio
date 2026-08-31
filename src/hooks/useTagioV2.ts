@@ -8,7 +8,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { api, cleanHandle } from "@/lib/tagio-api";
+import { ApiError, api, cleanHandle } from "@/lib/tagio-api";
 import type {
   PortfolioSettlementQuoteResult,
   SingleSwapQuoteResult,
@@ -66,11 +66,42 @@ export function useV2Handle(handle: string | undefined) {
 export function useV2HandlesByOwner(walletAddress: string | undefined) {
   return useQuery({
     queryKey: ["v2-handles-owner", walletAddress?.toLowerCase()],
-    // The endpoint answers with a { ownerWallet, total, handles } envelope, so
-    // this unwraps to the bare list the caller renders.
-    queryFn: async () =>
-      (await api.get<V2OwnerHandlesResponse>(`/v2/handles/owner/${walletAddress}`)).handles ?? [],
+    // The endpoint has answered both bare (`[…]`) and wrapped
+    // (`{ ownerWallet, total, handles }`); accept either so a backend deploy
+    // can't empty the tag list under us.
+    queryFn: async () => {
+      const payload = await api.get<V2HandleDetails[] | V2OwnerHandlesResponse>(
+        `/v2/handles/owner/${walletAddress}`,
+      );
+      return Array.isArray(payload) ? payload : (payload.handles ?? []);
+    },
     enabled: Boolean(walletAddress),
+  });
+}
+
+/**
+ * Is a tag free to claim? `GET /v2/handles/:handle` 404s for an unregistered
+ * tag, which is the only availability signal the API exposes.
+ */
+export function useV2HandleAvailability(handle: string | undefined) {
+  const clean = handle ? cleanHandle(handle).toLowerCase() : "";
+
+  return useQuery({
+    queryKey: ["v2-handle-availability", clean],
+    queryFn: async (): Promise<{ available: boolean; ownerWallet: string | null }> => {
+      try {
+        const details = await api.get<V2HandleDetails>(`/v2/handles/${clean}`);
+        return { available: false, ownerWallet: details.ownerWallet ?? null };
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) {
+          return { available: true, ownerWallet: null };
+        }
+        throw err;
+      }
+    },
+    enabled: clean.length >= 3,
+    staleTime: 30_000,
+    retry: false,
   });
 }
 
