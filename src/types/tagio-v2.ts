@@ -247,11 +247,54 @@ export interface V2PendingTransaction {
   expires_at?: string | null;
 }
 
-export interface V2SessionUser {
+// ── Auth: wallet → X → dashboard ────────────────────────────────────────────
+//
+// v2 ownership is wallet-first, but the rail is X-native: the bot settles
+// against verified X identities, so a wallet only reaches the dashboard once
+// it has been bound to an X account. POST /v2/auth/signin answers with one of
+// the two shapes below.
+
+/** The wallet is verified and already bound to an X account. */
+export interface V2SignInAuthorized {
+  token: string;
+  xLinked: true;
+  xHandle: string | null;
+  /** First tag owned by this wallet, when it already has one. */
+  handle?: string | null;
+  needsXLink?: false;
+}
+
+/** The wallet is verified; X authorization is still outstanding. */
+export interface V2SignInNeedsX {
+  needsXLink: true;
+  /** x.com OAuth 2.0 PKCE URL — a full-page navigation, not a fetch. */
+  authorizeUrl: string;
+  token?: undefined;
+  xLinked?: false;
+}
+
+export type V2SignInResponse = V2SignInAuthorized | V2SignInNeedsX;
+
+/**
+ * What the browser keeps between visits once both steps are done. The backend
+ * only ever issues a v2 JWT after the X hop, so holding an unexpired token for
+ * the connected wallet *is* the "X linked" signal; `xHandle` is for display.
+ */
+export interface V2Session {
+  walletAddress: string;
+  xHandle: string | null;
+  xUserId?: string | null;
+  /** JWT expiry in epoch ms; null when the token carried no `exp`. */
+  expiresAt: number | null;
+}
+
+/** GET /v2/auth/me — the API's own view of the bearer token's session. */
+export interface V2AuthMeResponse {
   authenticated: boolean;
   walletAddress: string;
   xUserId: string | null;
   xHandle: string | null;
+  /** False when the wallet's X binding is gone — the user must link again. */
   isLinked: boolean;
-  handles: Array<{ handle: string; display_name?: string | null }>;
+  handles: Array<{ handle: string; display_name: string | null }>;
 }

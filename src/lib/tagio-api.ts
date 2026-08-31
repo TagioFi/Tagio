@@ -1,11 +1,13 @@
 /**
  * Thin fetch wrapper for the TagioFi v2 REST API.
  *
- * All v2 routes are mounted under /v2/. Auth, when present, is a bearer JWT
- * obtained from POST /v2/auth/signin (EVM signature on Robinhood Chain).
+ * All v2 routes are mounted under /v2/. Auth is a bearer JWT obtained from
+ * POST /v2/auth/signin (EVM signature on Robinhood Chain) once the wallet has
+ * finished the X authorization hop — see `useTagioAuth`.
  */
 
 import { API_PROXY_PREFIX } from "@/lib/api-config";
+import type { V2Session } from "@/types/tagio-v2";
 
 /**
  * Where requests are sent.
@@ -23,6 +25,39 @@ export const API_BASE: string =
     : API_PROXY_PREFIX;
 
 const TOKEN_KEY = "tagiofi_v2_jwt";
+const SESSION_KEY = "tagiofi_v2_session";
+const RETURN_TO_KEY = "tagiofi_v2_return_to";
+
+/**
+ * Fired on the window whenever the stored session changes in *this* tab.
+ * `storage` only fires in other tabs, and the sign-in callback needs the nav
+ * (mounted long before it) to notice immediately.
+ */
+export const AUTH_EVENT = "tagiofi:auth-changed";
+
+/**
+ * The sentence POST /v2/auth/signin expects to be signed. The extra lines
+ * below it are informational — the wallet shows the whole message, and the
+ * nonce keeps two sign-ins from producing the same signature.
+ */
+export const V2_SIGNIN_MESSAGE =
+  "Welcome to TagioFi! Please sign this message to verify your wallet ownership.";
+
+export function buildSignInMessage(walletAddress: string, chainId: number): string {
+  const nonce =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(16).slice(2);
+
+  return [
+    V2_SIGNIN_MESSAGE,
+    "",
+    `Wallet: ${walletAddress}`,
+    `Chain: ${chainId}`,
+    `Issued: ${new Date().toISOString()}`,
+    `Nonce: ${nonce}`,
+  ].join("\n");
+}
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -40,6 +75,110 @@ export function setAuthToken(token: string | null): void {
     else window.localStorage.removeItem(TOKEN_KEY);
   } catch {
     /* storage blocked — requests simply go out unauthenticated */
+  }
+}
+
+/**
+ * Reads a v2 JWT's claims *without verifying it*. The signature is the API's
+ * business; the browser only needs to know which wallet the token belongs to
+ * and when to stop showing a signed-in UI.
+ */
+function decodeJwtPayload(token: string): { walletAddress?: string; exp?: number } | null {
+  const payload = token.split(".")[1];
+  if (!payload) return null;
+  try {
+    return JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
+      walletAddress?: string;
+      exp?: number;
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function jwtExpiresAt(token: string): number | null {
+  const exp = decodeJwtPayload(token)?.exp;
+  return typeof exp === "number" ? exp * 1000 : null;
+}
+
+export function jwtWalletAddress(token: string): string | null {
+  return decodeJwtPayload(token)?.walletAddress ?? null;
+}
+
+function announceAuthChange(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AUTH_EVENT));
+}
+
+/**
+ * The signed-in session: which wallet signed, and which X account it is bound
+ * to. A session is only ever written after the X hop, so its presence (with a
+ * live token) is what opens the dashboard.
+ */
+export function getStoredSession(): V2Session | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<V2Session>;
+    if (!parsed.walletAddress) return null;
+    if (!getAuthToken()) return null;
+    if (parsed.expiresAt && parsed.expiresAt < Date.now()) {
+      clearAuthSession();
+      return null;
+    }
+    return {
+      walletAddress: parsed.walletAddress,
+      xHandle: parsed.xHandle ?? null,
+      xUserId: parsed.xUserId ?? null,
+      expiresAt: parsed.expiresAt ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredSession(session: V2Session, token: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    setAuthToken(token);
+  } catch {
+    /* storage blocked — the session simply won't survive a reload */
+  }
+  announceAuthChange();
+}
+
+export function clearAuthSession(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(SESSION_KEY);
+    window.localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    /* nothing to clear */
+  }
+  announceAuthChange();
+}
+
+/** Where to land after the X hop returns — set before leaving for x.com. */
+export function setReturnTo(path: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(RETURN_TO_KEY, path);
+  } catch {
+    /* falls back to /app */
+  }
+}
+
+export function takeReturnTo(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const value = window.sessionStorage.getItem(RETURN_TO_KEY);
+    window.sessionStorage.removeItem(RETURN_TO_KEY);
+    // Only ever return to a path on this origin.
+    return value && value.startsWith("/") && !value.startsWith("//") ? value : null;
+  } catch {
+    return null;
   }
 }
 

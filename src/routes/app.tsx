@@ -1,6 +1,9 @@
 /**
  * Settlement studio: claim a tag, edit its receive-mix, and mint pay-links.
- * Everything here is owner-scoped — the connected wallet must own the tag.
+ *
+ * Everything here is owner-scoped — the connected wallet must own the tag —
+ * and the whole page sits behind <AuthGate>: connect wallet → connect X →
+ * dashboard, in that order, with no way past the X step.
  */
 
 import { createFileRoute } from "@tanstack/react-router";
@@ -8,22 +11,22 @@ import { toast } from "sonner";
 import { useEffect, useMemo, useState } from "react";
 
 import { AllocationBar, legColor } from "@/components/tf/allocation-bar";
+import { AuthGate, XMark } from "@/components/tf/auth-gate";
 import { PageShell } from "@/components/tf/site-chrome";
 import { Aurora, SpotlightBackground, SpotlightCard } from "@/components/tf/spotlight";
-import { WalletButton } from "@/components/tf/wallet-button";
-import { useWallet } from "@/hooks/useWallet";
+import { useTagioAuth } from "@/hooks/useTagioAuth";
 import {
   useCreateV2Invoice,
   useRegisterV2Handle,
   useUpdateV2Elections,
   useV2Assets,
   useV2Handle,
+  useV2HandleAvailability,
   useV2HandlesByOwner,
   useV2InvoicesByOwner,
   useV2PendingTransactions,
-  useV2AuthMe,
 } from "@/hooks/useTagioV2";
-import { cleanHandle, formatBps, friendlyError } from "@/lib/tagio-api";
+import { cleanHandle, formatBps, friendlyError, shortAddress } from "@/lib/tagio-api";
 import { cn } from "@/lib/utils";
 import type { V2ElectionInput, V2Invoice, V2PendingTransaction } from "@/types/tagio-v2";
 
@@ -35,15 +38,18 @@ export const Route = createFileRoute("/app")({
 const TOTAL_BPS = 10_000;
 
 function StudioPage() {
-  const { address, isConnected, isRestoring } = useWallet();
-  const handlesQuery = useV2HandlesByOwner(address ?? undefined);
-  const authMeQuery = useV2AuthMe();
-  const pendingQuery = useV2PendingTransactions(address ?? undefined);
-  const invoicesQuery = useV2InvoicesByOwner(address ?? undefined);
+  const auth = useTagioAuth();
+  const { address, stage, xHandle } = auth;
+  const isReady = stage === "ready";
+
+  // Owner-scoped data is only fetched once both steps are done.
+  const handlesQuery = useV2HandlesByOwner(isReady && address ? address : undefined);
+  const pendingQuery = useV2PendingTransactions(isReady && address ? address : undefined);
+  const invoicesQuery = useV2InvoicesByOwner(isReady && address ? address : undefined);
 
   const [activeHandle, setActiveHandle] = useState<string | null>(null);
   const [dismissedPendingIds, setDismissedPendingIds] = useState<string[]>([]);
-  const [dismissedXPrompt, setDismissedXPrompt] = useState(false);
+  const [xClaimDismissed, setXClaimDismissed] = useState(false);
 
   // Memoized handles list
   const handles = useMemo(() => handlesQuery.data ?? [], [handlesQuery.data]);
@@ -52,38 +58,23 @@ function StudioPage() {
     if (!activeHandle && handles.length) setActiveHandle(handles[0]!.handle);
   }, [handles, activeHandle]);
 
-  // Read dismissed state from localStorage on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = localStorage.getItem("tagio_dismissed_x_prompt");
-      if (stored === "true") setDismissedXPrompt(true);
-    }
-  }, []);
+  // Offer the verified X username as a tag
+  const xTag = xHandle ? cleanHandle(xHandle).toLowerCase() : "";
+  const showXClaim =
+    isReady &&
+    /^[a-z0-9_]{3,32}$/.test(xTag) &&
+    !xClaimDismissed &&
+    !handlesQuery.isLoading &&
+    !handles.some((item) => item.handle.toLowerCase() === xTag);
 
-  // Modal 1 Trigger: First actionable pending transaction
+  // Modal: Actionable pending transaction for this user
   const pendingTxs = (pendingQuery.data ?? []).filter(
     (tx: any) => tx.status === "pending" && !dismissedPendingIds.includes(tx.request_id)
   );
   const activePendingTx = pendingTxs.length > 0 ? pendingTxs[0] : null;
 
-  // Modal 2 Trigger: Unclaimed connected X handle
-  const linkedXHandle = authMeQuery.data?.xHandle;
-  const isXHandleClaimed =
-    !linkedXHandle ||
-    handles.some((h) => h.handle.toLowerCase() === linkedXHandle.toLowerCase());
-  
-  const showClaimXModal =
-    !activePendingTx && Boolean(linkedXHandle) && !isXHandleClaimed && !dismissedXPrompt;
-
   const dismissPendingTx = (reqId: string) => {
     setDismissedPendingIds((prev) => [...prev, reqId]);
-  };
-
-  const dismissXClaimModal = () => {
-    setDismissedXPrompt(true);
-    if (typeof window !== "undefined") {
-      localStorage.setItem("tagio_dismissed_x_prompt", "true");
-    }
   };
 
   return (
@@ -102,30 +93,45 @@ function StudioPage() {
               Your elections are stored against your tag in basis points and must total 100%. Change
               them any time — nothing is locked or custodied.
             </p>
+
+            {isReady ? (
+              <div className="mt-6 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-ink/12 bg-lime/25 px-3.5 py-1.5 font-mono text-[0.8rem] font-semibold text-ink">
+                  <span className="size-1.5 rounded-full bg-lime-deep" aria-hidden="true" />
+                  {shortAddress(address)}
+                </span>
+                {xHandle ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-ink/12 bg-cream/70 px-3.5 py-1.5 text-[0.8rem] font-semibold text-ink">
+                    <XMark className="size-3" />@{xHandle}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={auth.signOut}
+                  className="rounded-full px-3 py-1.5 text-[0.8rem] font-semibold text-ink/45 transition-colors hover:text-ink"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : null}
           </header>
 
-          {isRestoring ? (
-            <SpotlightCard className="mt-12 flex flex-col items-center gap-3 p-14 text-center">
-              <h2 className="text-xl font-bold tracking-[-0.02em] text-ink">
-                Reconnecting your wallet…
-              </h2>
-              <p className="max-w-sm text-sm text-ink/55">
-                Restoring the session from your last visit.
-              </p>
-            </SpotlightCard>
-          ) : !isConnected ? (
-            <SpotlightCard className="mt-12 flex flex-col items-center gap-5 p-14 text-center">
-              <h2 className="text-xl font-bold tracking-[-0.02em] text-ink">
-                Connect a wallet to continue
-              </h2>
-              <p className="max-w-sm text-sm text-ink/55">
-                Tags are owned by an address on Robinhood Chain. Connect to see the tags you own or
-                claim a new one.
-              </p>
-              <WalletButton />
-            </SpotlightCard>
-          ) : (
-            <div className="mt-12 grid gap-6 lg:grid-cols-[300px_1fr]">
+          <AuthGate auth={auth}>
+            {showXClaim ? (
+              <ClaimXHandleCard
+                candidate={xTag}
+                ownerWallet={address!}
+                onClaimed={(claimed) => {
+                  setActiveHandle(claimed);
+                  setXClaimDismissed(true);
+                }}
+                onDismiss={() => setXClaimDismissed(true)}
+              />
+            ) : null}
+
+            <div
+              className={cn("grid gap-6 lg:grid-cols-[300px_1fr]", showXClaim ? "mt-6" : "mt-12")}
+            >
               <div className="flex flex-col gap-4">
                 <SpotlightCard className="p-6">
                   <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink/40">
@@ -175,7 +181,11 @@ function StudioPage() {
                   </ul>
                 </SpotlightCard>
 
-                <ClaimTagCard ownerWallet={address!} onClaimed={setActiveHandle} defaultHandle={linkedXHandle ?? ""} />
+                <ClaimTagCard
+                  ownerWallet={address!}
+                  onClaimed={setActiveHandle}
+                  defaultHandle={xTag}
+                />
 
                 <ActivitySection
                   pendingTxs={pendingQuery.data ?? []}
@@ -198,35 +208,22 @@ function StudioPage() {
                 )}
               </div>
             </div>
-          )}
+          </AuthGate>
         </div>
       </section>
 
-      {/* Modal 1: Pending Transaction to Review & Sign */}
+      {/* Modal: Actionable Pending Transaction */}
       {activePendingTx ? (
         <PendingTxReviewModal
           tx={activePendingTx}
           onDismiss={() => dismissPendingTx(activePendingTx.request_id)}
         />
       ) : null}
-
-      {/* Modal 2: Claim Official X Tag Prompt */}
-      {showClaimXModal ? (
-        <ClaimXTagModal
-          xHandle={linkedXHandle!}
-          ownerWallet={address!}
-          onClaimed={(h) => {
-            setActiveHandle(h);
-            dismissXClaimModal();
-          }}
-          onDismiss={dismissXClaimModal}
-        />
-      ) : null}
     </PageShell>
   );
 }
 
-/* ── Modal 1: Pending Transaction Review & Sign ────────────────────────── */
+/* ── Modal: Pending Transaction Review & Sign ────────────────────────── */
 
 function PendingTxReviewModal({
   tx,
@@ -290,72 +287,99 @@ function PendingTxReviewModal({
   );
 }
 
-/* ── Modal 2: Claim Official X Tag Modal ───────────────────────────────── */
+/* ── Banner: Claim verified X handle ────────────────────────────────────── */
 
-function ClaimXTagModal({
-  xHandle,
+function ClaimXHandleCard({
+  candidate,
   ownerWallet,
   onClaimed,
   onDismiss,
 }: {
-  xHandle: string;
+  candidate: string;
   ownerWallet: string;
   onClaimed: (handle: string) => void;
   onDismiss: () => void;
 }) {
+  const availability = useV2HandleAvailability(candidate);
   const register = useRegisterV2Handle();
 
-  const handleClaim = async () => {
-    const clean = cleanHandle(xHandle);
-    if (!clean) return;
+  const taken = availability.data?.available === false;
+  const free = availability.data?.available === true;
+
+  const claim = async () => {
     try {
       const created = await register.mutateAsync({
-        handle: clean,
+        handle: candidate,
         ownerWallet,
-        displayName: xHandle,
-      });
-      toast.success(`@${created.handle} is claimed!`, {
-        description: "Configure your receive-mix below.",
+        displayName: candidate,
       });
       onClaimed(created.handle);
+      toast.success(`@${created.handle} is yours`, {
+        description: "Set a receive-mix so payments land in what you keep.",
+      });
     } catch (err) {
-      toast.error("Couldn't claim tag", { description: friendlyError(err) });
+      toast.error("Couldn't claim that tag", { description: friendlyError(err) });
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm animate-in fade-in duration-200">
-      <SpotlightCard className="relative w-full max-w-md border-lime/40 p-8 shadow-2xl">
-        <span className="tf-chip bg-lime/30 font-bold text-ink">
-          Official Tag Available
-        </span>
+    <SpotlightCard className="mt-12 p-8 border-lime/40">
+      <div className="flex flex-wrap items-start gap-x-8 gap-y-5">
+        <div className="min-w-64 flex-1">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-ink/40">
+            <XMark className="size-3" />X connected
+          </div>
 
-        <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink">
-          Claim @{xHandle}
-        </h2>
-        <p className="mt-2 text-sm leading-relaxed text-ink/65">
-          Your connected X account is <strong>@{xHandle}</strong>. Claim your official tag now with 1-click so people can tip and pay you directly on Twitter and Robinhood Chain.
-        </p>
+          <h2 className="mt-3 text-xl font-extrabold tracking-[-0.03em] text-ink">
+            {taken ? (
+              <>@{candidate} is already claimed</>
+            ) : (
+              <>
+                Claim <span className="text-lime-deep">@{candidate}</span> as your tag
+              </>
+            )}
+          </h2>
 
-        <div className="mt-6 flex flex-col gap-2.5">
-          <button
-            type="button"
-            onClick={handleClaim}
-            disabled={register.isPending}
-            className="w-full rounded-full bg-ink py-3 text-sm font-bold text-cream transition-colors hover:bg-ink/85 disabled:opacity-50"
-          >
-            {register.isPending ? "Claiming…" : `Claim @${xHandle} (1-Click)`}
-          </button>
+          <p className="mt-2 max-w-lg text-sm leading-relaxed text-ink/55">
+            {availability.isLoading ? (
+              "Checking whether that tag is still free…"
+            ) : availability.isError ? (
+              friendlyError(availability.error)
+            ) : taken ? (
+              <>
+                Another wallet registered it first. Claim a different tag below — your X account
+                stays linked either way.
+              </>
+            ) : (
+              <>
+                It matches your verified X username, so anyone who can mention you can pay you.
+                Nothing is custodied, and you can set the receive-mix straight after.
+              </>
+            )}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {free ? (
+            <button
+              type="button"
+              onClick={() => void claim()}
+              disabled={register.isPending}
+              className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-cream transition-colors hover:bg-ink/85 disabled:opacity-45"
+            >
+              {register.isPending ? "Claiming…" : `Claim @${candidate}`}
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onDismiss}
-            className="w-full rounded-full border border-ink/15 py-2.5 text-xs font-semibold text-ink/60 transition-colors hover:border-ink/30 hover:text-ink"
+            className="rounded-full border border-ink/15 px-4 py-2.5 text-sm font-semibold text-ink/65 transition-colors hover:border-ink/30 hover:text-ink"
           >
-            Maybe later
+            {taken ? "Dismiss" : "Not now"}
           </button>
         </div>
-      </SpotlightCard>
-    </div>
+      </div>
+    </SpotlightCard>
   );
 }
 

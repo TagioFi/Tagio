@@ -7,8 +7,9 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { TagioMark } from "@/components/tf/brand";
+import { XMark } from "@/components/tf/auth-gate";
 import { WalletButton } from "@/components/tf/wallet-button";
-import { useWallet } from "@/hooks/useWallet";
+import { useTagioAuth } from "@/hooks/useTagioAuth";
 import { cn } from "@/lib/utils";
 import { robinhoodExplorerUrl } from "@/lib/wagmi";
 
@@ -63,7 +64,7 @@ export function SiteNav() {
         </div>
 
         <div className="ml-auto flex items-center gap-2 md:ml-0">
-          <DashboardLink />
+          <AuthNav />
           <WalletButton />
         </div>
       </nav>
@@ -72,40 +73,65 @@ export function SiteNav() {
 }
 
 /**
- * Appears only once a wallet is connected, giving the user somewhere to go.
- * Hidden on /app itself, and gated behind `mounted` because the server renders
- * the disconnected state — reading wagmi's status during hydration would
- * mismatch.
+ * Tracks the user through connect wallet → connect X → dashboard.
+ *
+ * With a wallet connected but no X link it points at /app, where the gate runs
+ * the X hop; once linked it shows the verified handle and the dashboard link.
+ * Hidden on /app itself, and the X-handle pill is dropped on small screens.
+ * `stage` is "restoring" until mount, which is what keeps the server-rendered
+ * (signed-out) markup from mismatching during hydration.
  */
-function DashboardLink() {
-  const { isConnected } = useWallet();
-  const [mounted, setMounted] = useState(false);
+function AuthNav() {
+  const { stage, xHandle } = useTagioAuth();
   const routerState = useRouterState();
-
-  useEffect(() => setMounted(true), []);
-
   const onDashboard = routerState.location.pathname.startsWith("/app");
-  if (!mounted || !isConnected || onDashboard) return null;
+
+  if (stage === "restoring" || stage === "connect-wallet") return null;
+
+  if (stage !== "ready") {
+    return onDashboard ? null : (
+      <Link
+        to="/app"
+        className={cn(
+          "hidden items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-sm font-bold text-cream sm:inline-flex",
+          "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-14px] hover:shadow-ink/60",
+        )}
+      >
+        <XMark className="size-3.5" />
+        Connect X
+      </Link>
+    );
+  }
 
   return (
-    <Link
-      to="/app"
-      className={cn(
-        "hidden items-center gap-1.5 rounded-full bg-lime px-4 py-2 text-sm font-bold text-ink sm:inline-flex",
-        "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-14px] hover:shadow-lime-deep",
+    <>
+      {xHandle ? (
+        <span className="hidden items-center gap-1.5 rounded-full border border-ink/12 bg-cream/70 px-3 py-1.5 text-[0.8rem] font-semibold text-ink lg:inline-flex">
+          <XMark className="size-3" />@{xHandle}
+        </span>
+      ) : null}
+
+      {onDashboard ? null : (
+        <Link
+          to="/app"
+          className={cn(
+            "hidden items-center gap-1.5 rounded-full bg-lime px-4 py-2 text-sm font-bold text-ink sm:inline-flex",
+            "transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_12px_28px_-14px] hover:shadow-lime-deep",
+          )}
+        >
+          Go to dashboard
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" aria-hidden="true">
+            <path
+              d="M5 12h13M12 5l7 7-7 7"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </Link>
       )}
-    >
-      Go to dashboard
-      <svg viewBox="0 0 24 24" className="size-3.5" fill="none" aria-hidden="true">
-        <path
-          d="M5 12h13M12 5l7 7-7 7"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </Link>
+    </>
   );
 }
 
