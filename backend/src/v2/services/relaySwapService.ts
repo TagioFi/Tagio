@@ -1,5 +1,5 @@
 import { config } from "../../config";
-import { parseUnits, formatUnits } from "viem";
+import { parseUnits } from "viem";
 import {
   ROBINHOOD_CHAIN_ID,
   V2TokenInfo,
@@ -7,7 +7,7 @@ import {
   resolveV2Token,
 } from "../lib/robinhoodTokens";
 
-export const PROTOCOL_FEE_BPS = 15; // 0.15% app fee
+export const PROTOCOL_FEE_BPS = 15; // 0.15% (15 bps) app fee
 
 export interface SingleSwapQuoteParams {
   userWallet: string;
@@ -80,7 +80,7 @@ export async function fetchRelayRobinhoodQuote(params: {
     appFees: [
       {
         recipient: config.robinhood.feeWallet,
-        bps: PROTOCOL_FEE_BPS,
+        fee: PROTOCOL_FEE_BPS.toString(),
       },
     ],
   };
@@ -124,51 +124,32 @@ export async function quoteSingleSwap(params: SingleSwapQuoteParams): Promise<Si
     };
   }
 
-  try {
-    const relayQuote = await fetchRelayRobinhoodQuote({
-      user: params.userWallet,
-      originCurrency: params.fromToken.address,
-      destinationCurrency: params.toToken.address,
-      amount: inBaseUnits,
-      recipient: params.recipientWallet || params.userWallet,
-    });
+  const relayQuote = await fetchRelayRobinhoodQuote({
+    user: params.userWallet,
+    originCurrency: params.fromToken.address,
+    destinationCurrency: params.toToken.address,
+    amount: inBaseUnits,
+    recipient: params.recipientWallet || params.userWallet,
+  });
 
-    const outAmount = relayQuote.details?.currencyOut?.amount || "0";
-    const outFormatted = relayQuote.details?.currencyOut?.amountFormatted || "0";
-    const priceImpact = parseFloat(relayQuote.details?.totalImpact?.percent || "0");
+  const outAmount = relayQuote.details?.currencyOut?.amount || "0";
+  const outFormatted = relayQuote.details?.currencyOut?.amountFormatted || "0";
+  const priceImpact = parseFloat(relayQuote.details?.totalImpact?.percent || "0");
 
-    return {
-      fromToken: params.fromToken,
-      toToken: params.toToken,
-      amountIn: inBaseUnits,
-      amountInFormatted: params.amountIn.toString(),
-      amountOut: outAmount,
-      amountOutFormatted: outFormatted,
-      rate: relayQuote.details?.rate || (parseFloat(outFormatted) / params.amountIn).toFixed(6),
-      priceImpactPct: priceImpact,
-      timeEstimate: relayQuote.details?.timeEstimate || 2,
-      requestId: relayQuote.requestId,
-      steps: relayQuote.steps,
-      rawRelayQuote: relayQuote,
-    };
-  } catch (err: any) {
-    // Graceful fallback for mock / development liquidity simulation
-    const simulatedRate = params.toToken.assetType === "stablecoin" ? 2500 : 0.0004;
-    const estimatedOut = params.amountIn * simulatedRate;
-    const outBase = parseUnits(estimatedOut.toFixed(6), params.toToken.decimals).toString();
-
-    return {
-      fromToken: params.fromToken,
-      toToken: params.toToken,
-      amountIn: inBaseUnits,
-      amountInFormatted: params.amountIn.toString(),
-      amountOut: outBase,
-      amountOutFormatted: estimatedOut.toFixed(6),
-      rate: simulatedRate.toString(),
-      priceImpactPct: 0.05,
-      timeEstimate: 2,
-    };
-  }
+  return {
+    fromToken: params.fromToken,
+    toToken: params.toToken,
+    amountIn: inBaseUnits,
+    amountInFormatted: params.amountIn.toString(),
+    amountOut: outAmount,
+    amountOutFormatted: outFormatted,
+    rate: relayQuote.details?.rate || (parseFloat(outFormatted) / params.amountIn).toFixed(6),
+    priceImpactPct: priceImpact,
+    timeEstimate: relayQuote.details?.timeEstimate || 2,
+    requestId: relayQuote.requestId,
+    steps: relayQuote.steps,
+    rawRelayQuote: relayQuote,
+  };
 }
 
 export async function quotePortfolioSettlement(params: {
@@ -187,18 +168,33 @@ export async function quotePortfolioSettlement(params: {
     const legShare = (params.totalAmountIn * election.basisPoints) / 10000;
     const legInBaseUnits = parseUnits(legShare.toString(), params.fromToken.decimals).toString();
 
-    let legQuote = await quoteSingleSwap({
-      userWallet: params.userWallet,
-      recipientWallet: params.recipientWallet,
-      fromToken: params.fromToken,
-      toToken: election.token,
-      amountIn: legShare,
-      slippageBps: params.slippageBps || 50,
-    });
-
-    // Slippage Fallback Guardrail: If leg price impact exceeds 5%, safe-settle into USDG
+    let legQuote: SingleSwapQuoteResult;
     let isFallbackUsdg = false;
-    if (Math.abs(legQuote.priceImpactPct) > 5.0 && election.token.symbol !== "USDG") {
+
+    try {
+      legQuote = await quoteSingleSwap({
+        userWallet: params.userWallet,
+        recipientWallet: params.recipientWallet,
+        fromToken: params.fromToken,
+        toToken: election.token,
+        amountIn: legShare,
+        slippageBps: params.slippageBps || 50,
+      });
+
+      // Slippage Fallback Guardrail: If leg price impact exceeds 5%, safe-settle into USDG
+      if (Math.abs(legQuote.priceImpactPct) > 5.0 && election.token.symbol !== "USDG") {
+        isFallbackUsdg = true;
+        legQuote = await quoteSingleSwap({
+          userWallet: params.userWallet,
+          recipientWallet: params.recipientWallet,
+          fromToken: params.fromToken,
+          toToken: USDG,
+          amountIn: legShare,
+          slippageBps: 50,
+        });
+      }
+    } catch (err) {
+      // If a specific RWA leg fails liquidity on Relay, safe-settle that leg in USDG
       isFallbackUsdg = true;
       legQuote = await quoteSingleSwap({
         userWallet: params.userWallet,
