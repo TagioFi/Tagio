@@ -71,6 +71,7 @@ export const config = {
     // for "AI reply bots"; a fixed reply bank keyed off Groq's structured
     // slot output stays clearly out of that category).
     apiKey: process.env.GROQ_API_KEY ?? "",
+    model: process.env.GROQ_MODEL ?? "qwen/qwen3.8-27b",
   },
 
   blockscout: {
