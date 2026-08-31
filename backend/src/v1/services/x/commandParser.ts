@@ -17,14 +17,26 @@ export interface ParsedCommand {
 // a literal "$" prefix on the amount an extremely natural typo/habit, not an
 // edge case (confirmed live 2026-07-26: a real launch-eve mention with no bot
 // reply at all, caused by exactly this gap).
-const COMMAND_PATTERN =
-  /send\s+\$?([0-9]*\.?[0-9]+)\s+(eth|usdg)\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
+const COMMAND_PATTERN_1 =
+  /(?:send|pay|tip)\s+\$?([0-9]*\.?[0-9]+)\s+(eth|usdg)\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
+
+const COMMAND_PATTERN_2 =
+  /(?:send|pay|tip)\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})\s+\$?([0-9]*\.?[0-9]+)\s+(eth|usdg)/i;
 
 export function parseCommand(rawText: string): ParsedCommand | null {
-  const match = rawText.match(COMMAND_PATTERN);
-  if (!match) return null;
+  let amount = "";
+  let tokenRaw = "";
+  let targetRaw = "";
 
-  const [, amount, tokenRaw, targetRaw] = match;
+  const match1 = rawText.match(COMMAND_PATTERN_1);
+  if (match1) {
+    [, amount, tokenRaw, targetRaw] = match1;
+  } else {
+    const match2 = rawText.match(COMMAND_PATTERN_2);
+    if (!match2) return null;
+    [, targetRaw, amount, tokenRaw] = match2;
+  }
+
   const token: BotToken = tokenRaw.toLowerCase() === "eth" ? "native" : "usdg";
 
   if (targetRaw.startsWith("@")) {
