@@ -29,17 +29,32 @@ router.get("/v2/auth/x/callback", async (req, res, next) => {
 
     const tokenResponse = await exchangeCodeForToken(code, pending.codeVerifier);
     const xUser = await getAuthenticatedXUser(tokenResponse.access_token);
+    const normalizedWallet = pending.walletAddress.toLowerCase();
 
-    // Update any existing v2_handles owned by this wallet with the verified X identity
+    // 1. Persist wallet-level identity in v2_wallet_identities
+    await pool.query(
+      `INSERT INTO v2_wallet_identities (wallet_address, x_user_id, x_handle, updated_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (wallet_address) DO UPDATE SET
+         x_user_id = EXCLUDED.x_user_id,
+         x_handle = EXCLUDED.x_handle,
+         updated_at = NOW()`,
+      [normalizedWallet, xUser.id, xUser.username]
+    );
+
+    // 2. Backfill any existing v2_handles owned by this wallet with the verified X identity
     await pool.query(
       `UPDATE v2_handles 
        SET x_user_id = $1, x_handle = $2, updated_at = NOW() 
-       WHERE LOWER(owner_wallet) = LOWER($3)`,
-      [xUser.id, xUser.username, pending.walletAddress]
+       WHERE LOWER(owner_wallet) = $3`,
+      [xUser.id, xUser.username, normalizedWallet]
     );
 
-    const token = issueV2Jwt(pending.walletAddress);
-    res.redirect(`${config.frontendUrl}/auth/callback#token=${token}&xHandle=${encodeURIComponent(xUser.username)}`);
+    // 3. Issue JWT carrying verified X identity
+    const token = issueV2Jwt(normalizedWallet, xUser.id, xUser.username);
+    res.redirect(
+      `${config.frontendUrl}/auth/callback#token=${token}&xHandle=${encodeURIComponent(xUser.username)}&walletAddress=${normalizedWallet}`
+    );
   } catch (err) {
     next(err);
   }

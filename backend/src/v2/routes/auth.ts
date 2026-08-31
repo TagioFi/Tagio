@@ -9,22 +9,33 @@ import { storePendingV2AuthState } from "../services/pendingAuthState";
 
 const router = Router();
 
-const SIGNIN_MESSAGE_V2 = "Welcome to TagioFi! Please sign this message to verify your wallet ownership.";
 const X_OAUTH_SCOPE = "users.read tweet.read";
 
-export function issueV2Jwt(walletAddress: string): string {
-  return jwt.sign({ walletAddress: walletAddress.toLowerCase(), version: "v2" }, config.jwtAccessSecret, {
-    expiresIn: "7d",
-  });
+export interface V2JwtPayload {
+  walletAddress: string;
+  xUserId?: string | null;
+  xHandle?: string | null;
+  version: "v2";
+}
+
+export function issueV2Jwt(walletAddress: string, xUserId?: string | null, xHandle?: string | null): string {
+  const payload: V2JwtPayload = {
+    walletAddress: walletAddress.toLowerCase(),
+    xUserId: xUserId || null,
+    xHandle: xHandle || null,
+    version: "v2",
+  };
+  return jwt.sign(payload, config.jwtAccessSecret, { expiresIn: "7d" });
 }
 
 // POST /v2/auth/signin — Sign in with Robinhood EVM wallet
 router.post("/v2/auth/signin", async (req, res, next) => {
   try {
-    const { walletAddress, signature, message } = req.body as {
+    const { walletAddress, signature, message, relink } = req.body as {
       walletAddress?: string;
       signature?: string;
       message?: string;
+      relink?: boolean;
     };
 
     if (!walletAddress || !signature || !message) {
@@ -50,31 +61,86 @@ router.post("/v2/auth/signin", async (req, res, next) => {
 
     const normalizedWallet = walletAddress.toLowerCase();
 
-    // Check if user already has a v2 handle or linked X account
-    const { rows } = await pool.query(
-      "SELECT handle, x_user_id, x_handle FROM v2_handles WHERE LOWER(owner_wallet) = $1 LIMIT 1",
+    // Check wallet identity in v2_wallet_identities
+    const identityRes = await pool.query(
+      "SELECT wallet_address, x_user_id, x_handle FROM v2_wallet_identities WHERE LOWER(wallet_address) = $1 LIMIT 1",
       [normalizedWallet]
     );
 
-    if (rows.length > 0 && rows[0].x_user_id) {
-      const token = issueV2Jwt(normalizedWallet);
+    // If wallet already has a verified X account and relink is not requested
+    if (identityRes.rows.length > 0 && !relink) {
+      const row = identityRes.rows[0];
+      const token = issueV2Jwt(normalizedWallet, row.x_user_id, row.x_handle);
       res.json({
         token,
+        needsXLink: false,
         xLinked: true,
-        xHandle: rows[0].x_handle,
-        handle: rows[0].handle,
+        user: {
+          walletAddress: normalizedWallet,
+          xUserId: row.x_user_id,
+          xHandle: row.x_handle,
+        },
       });
       return;
     }
 
-    // Step 2: X Linking required
+    // Step 2: X Linking required (or relinking)
     const state = `v2_${randomBytes(16).toString("hex")}`;
     const { codeVerifier, codeChallenge } = generatePkcePair();
     await storePendingV2AuthState(state, { walletAddress: normalizedWallet, codeVerifier });
 
     res.json({
       needsXLink: true,
+      xLinked: false,
+      state,
       authorizeUrl: buildAuthorizeUrl({ state, codeChallenge, scope: X_OAUTH_SCOPE }),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /v2/auth/me — Session check endpoint
+router.get("/v2/auth/me", async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith("Bearer ")) {
+      res.status(401).json({ authenticated: false, error: "Missing Bearer token" });
+      return;
+    }
+
+    let payload: V2JwtPayload;
+    try {
+      payload = jwt.verify(authHeader.slice(7), config.jwtAccessSecret) as V2JwtPayload;
+    } catch {
+      res.status(401).json({ authenticated: false, error: "Invalid or expired token" });
+      return;
+    }
+
+    const normalizedWallet = payload.walletAddress.toLowerCase();
+
+    // Query fresh identity and owned tags
+    const [identityRes, handlesRes] = await Promise.all([
+      pool.query(
+        "SELECT x_user_id, x_handle FROM v2_wallet_identities WHERE LOWER(wallet_address) = $1 LIMIT 1",
+        [normalizedWallet]
+      ),
+      pool.query(
+        "SELECT handle, display_name FROM v2_handles WHERE LOWER(owner_wallet) = $1 ORDER BY created_at ASC",
+        [normalizedWallet]
+      ),
+    ]);
+
+    const identity = identityRes.rows[0] || null;
+    const isLinked = Boolean(identity?.x_user_id);
+
+    res.json({
+      authenticated: true,
+      walletAddress: normalizedWallet,
+      xUserId: identity?.x_user_id || payload.xUserId || null,
+      xHandle: identity?.x_handle || payload.xHandle || null,
+      isLinked,
+      handles: handlesRes.rows,
     });
   } catch (err) {
     next(err);
