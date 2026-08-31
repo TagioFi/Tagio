@@ -2,208 +2,132 @@
 
 > **Core Philosophy**: **"Your tag knows what you want to be paid in."**
 >
-> **TagioFi v2** is a non-custodial, **receive-side Real-World Asset (RWA) settlement rail on Robinhood Chain**. While traditional payment rails dictate what token the sender must send, TagioFi lets receivers set their target portfolio once (e.g. `60% SPYR`, `30% USDG`, `10% GLDR`). Any inbound payment in ETH, USDG, or tokenized equities settles atomically via **Relay.link same-chain intent routing** into the receiver's elected assets in a single transaction.
+> **TagioFi v2** is a non-custodial, **receive-side Real-World Asset (RWA) settlement rail on Robinhood Chain (Chain ID: 4663)**. Senders pay in whatever asset they hold (ETH, USDG, or tokenized equities). Receivers set their target portfolio mix once (e.g. `60% SPCX`, `30% USDG`, `10% NVDA`). The rail automatically routes and swaps inbound payments via **Uniswap V4 / V3 & Relay.link** into the receiver's elected assets in a single atomic transaction.
 
 ---
 
-## 1. Environments & Base Endpoints
+## 1. Environments & Network Configuration
 
-| Environment | Base URL | Status |
+| Parameter | Value | Details |
 | :--- | :--- | :--- |
-| **Live Production API** | `https://api.tagiopay.com` | Active |
-| **Local Development API** | `http://localhost:3001` | Active |
-| **Network** | Robinhood Chain (`13746` / `4663`) | Active |
-| **Protocol Fee Treasury** | `0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9` | 0.15% (15 bps) |
+| **Live Production API** | `https://api.tagiopay.com` | Primary API Host |
+| **Local Development API** | `http://localhost:3001` | Backend Port 3001 |
+| **Network** | **Robinhood Chain** | Arbitrum L2 Rollup |
+| **Chain ID** | **`4663`** (`0x1237`) | Canonical Mainnet ID |
+| **RPC Endpoints** | `https://rpc.mainnet.chain.robinhood.com`<br>`https://robinhood-rpc.publicnode.com` | Live & CORS Open |
+| **Block Explorer** | `https://robinhoodchain.blockscout.com` | Mainnet Blockscout |
+| **Protocol Fee Treasury** | `0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9` | 0.15% (15 bps) on Swaps |
 
-All v2 endpoints are mounted under the **`/v2/`** prefix. Authenticated requests include:
-```http
-Authorization: Bearer <JWT_TOKEN>
+---
+
+## 2. Token Registry & Verified Onchain Contracts (Chain ID: 4663)
+
+All assets trade natively on Robinhood Chain with deep liquidity on **Uniswap V4 / V3**:
+
+| Symbol | Asset Name / Description | Contract Address | Decimals | Type |
+| :--- | :--- | :--- | :--- | :--- |
+| **`USDG`** | Global Dollar (Canonical Stablecoin) | `0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168` | 6 | Base Stablecoin |
+| **`ETH`** | Native Ether | `0x0000000000000000000000000000000000000000` | 18 | Native Gas |
+| **`WETH`** | Wrapped Ether | `0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73` | 18 | Wrapped Native |
+| **`SPCX`** | SpaceX (Space Exploration Technologies Corp.) | `0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa` | 18 | Equity Token |
+| **`AAPL`** | Apple Inc. Token | `0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9` | 18 | Equity Token |
+| **`TSLA`** | Tesla Inc. Token | `0x322F0929c4625eD5bAd873c95208D54E1c003b2d` | 18 | Equity Token |
+| **`NVDA`** | NVIDIA Corp. Token | `0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC` | 18 | Equity Token |
+| **`GOOGL`** | Alphabet Inc. Token | `0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3` | 18 | Equity Token |
+| **`AMZN`** | Amazon.com Inc. Token | `0x12f190a9F9d7D37a250758b26824B97CE941bF54` | 18 | Equity Token |
+| **`MSFT`** | Microsoft Corp. Token | `0xe93237C50D904957Cf27E7B1133b510C669c2e74` | 18 | Equity Token |
+| **`META`** | Meta Platforms Inc. Token | `0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35` | 18 | Equity Token |
+| **`COIN`** | Coinbase Global Inc. Token | `0x6330D8C3178a418788dF01a47479c0ce7CCF450b` | 18 | Equity Token |
+
+---
+
+## 3. Core Settlement Flow
+
+```
+                               Sender Payment
+                       (Pays in ETH, USDG, or Equities)
+                                      │
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                    TagioFi v2 Settlement Engine (4663)                      │
+│                                                                             │
+│  1. Resolve Target Receiver (@tag, #tag, or 0x address)                     │
+│  2. Hydrate Receiver Target Portfolio Elections (Sum of bps = 10,000)       │
+│  3. Calculate Best Execution Route per Leg:                                │
+│     - Same-Token: Direct Transfer (0% Fee, instant transfer step)           │
+│     - Base Pairs: Relay.link Same-Chain Bridge Quote (0.15% Protocol Fee)   │
+│     - Equities: Robinhood Uniswap V4 / V3 Quoter + SwapRouter Calldata      │
+│  4. Assemble Complete Executable Steps Array for User's Wallet Client       │
+└─────────────────────────────────────┬───────────────────────────────────────┘
+                                      │
+                                      ▼
+                      Single User Wallet Signature
+                                      │
+           ┌──────────────────────────┼──────────────────────────┐
+           ▼                          ▼                          ▼
+      60% SPCX                   30% USDG                   10% NVDA
+(SpaceX Tokenized Equity)    (Global Dollar)         (NVIDIA Tokenized Equity)
+           │                          │                          │
+           └──────────────────────────┼──────────────────────────┘
+                                      ▼
+                        Receiver Wallet Token Accounts
+                         (100% Non-Custodial & Atomic)
 ```
 
 ---
 
-## 2. Core Execution Architecture
+## 4. Tag Ownership & Authentication Architecture
 
-```
-                          Sender Payment
-                      (Pays ETH / USDG / Any Token)
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                   TagioFi v2 Multi-Leg Settlement Rail                 │
-│                                                                        │
-│  1. Resolve Receiver Tag / Handle & Portfolio Elections (bps)          │
-│  2. Relay.link Same-Chain Quoting (Robinhood Chain ID: 13746)          │
-│  3. Calculate Best-Execution Route per Asset Leg (0.15% App Fee)       │
-│  4. Assemble Atomic Transaction Bundle (Zero Held Balances / Custody)   │
-└──────────────────────────────────┬─────────────────────────────────────┘
-                                   │
-                                   ▼
-                   Single Wallet Signature (Sender)
-                                   │
-         ┌─────────────────────────┼─────────────────────────┐
-         ▼                         ▼                         ▼
-    60% SPYR                  30% USDG                  10% GLDR
-(S&P 500 Tokenized ETF)    (Global Dollar)        (Tokenized Gold)
-         │                         │                         │
-         └─────────────────────────┼─────────────────────────┘
-                                   ▼
-                     Receiver Wallet Token Accounts
-                     (100% Non-Custodial & Atomic)
-```
+TagioFi v2 supports **Wallet-First Ownership** with optional **Twitter/X Identity Linking**:
+
+### A. Wallet-First Claiming (`POST /v2/handles/register`)
+Users claim tags directly with their connected Robinhood Chain EVM wallet.
+* No social login required to claim tags, configure elections, or mint pay-links.
+* Tag ownership is enforced by wallet address signature.
+
+### B. Optional Twitter/X Account Linking (`POST /v2/auth/signin` & `GET /v2/auth/x/callback`)
+Users who wish to link their verified Twitter/X handle to their tag:
+1. Frontend calls `POST /v2/auth/signin` with `{ walletAddress, signature, message }`.
+2. Backend returns `{ needsXLink: true, authorizeUrl: "https://x.com/i/oauth2/authorize?..." }`.
+3. User authorizes on X $\rightarrow$ redirected to `GET /v2/auth/x/callback`.
+4. Backend updates `v2_handles` with verified `x_user_id` and `x_handle`, issuing a JWT containing both wallet and X identity.
 
 ---
 
-## 3. TypeScript Interfaces & Data Models
+## 5. Pending Transactions, Bot Flows & Pay Links
 
-Export these types in your frontend codebase (e.g., `src/types/tagio-v2.ts`):
+### A. X Bot Automated Settlement
+1. A user mentions `@TagioPayBot send @vlad 40 usdg` on Twitter.
+2. The bot parses the command via Groq AI (`llama-3.3-70b-versatile`) and saves a pending record in the `pending_transactions` table with a unique `request_id` (e.g. `pnd_8f3a1b`).
+3. The bot replies with the pay link: `https://tagiopay.com/pay/pnd_8f3a1b`.
 
-```typescript
-// ── RWA & Token Types ───────────────────────────────────────────────────────
-
-export interface V2TokenInfo {
-  symbol: string;
-  name: string;
-  address: `0x${string}`;
-  decimals: number;
-  isNative?: boolean;
-  isBaseCurrency?: boolean;
-  underlyingTicker?: string;
-  iconUrl?: string;
-  assetType: "native" | "stablecoin" | "equity" | "etf" | "commodity";
-}
-
-export interface V2AssetsResponse {
-  baseCurrencies: V2TokenInfo[];
-  featured: V2TokenInfo[];
-  total: number;
-  assets: V2TokenInfo[];
-}
-
-// ── Handle & Election Types ────────────────────────────────────────────────
-
-export interface V2ElectionRow {
-  id: number;
-  handleId: number;
-  symbol: string;
-  tokenAddress: string;
-  decimals: number;
-  basisPoints: number; // 100 bps = 1.00% (Sum of active elections must = 10,000)
-  percentage: number;  // e.g. 60 = 60.00%
-  isActive: boolean;
-  token?: V2TokenInfo | null;
-}
-
-export interface V2HandleDetails {
-  id: number;
-  handle: string;
-  ownerWallet: string;
-  xUserId: string | null;
-  xHandle: string | null;
-  displayName: string | null;
-  avatarUrl: string | null;
-  bio: string | null;
-  metadata: Record<string, any>;
-  elections: V2ElectionRow[];
-  totalBasisPoints: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ── Settlement & Quote Types ───────────────────────────────────────────────
-
-export interface SingleSwapQuoteResult {
-  fromToken: V2TokenInfo;
-  toToken: V2TokenInfo;
-  amountIn: string;
-  amountInFormatted: string;
-  amountOut: string;
-  amountOutFormatted: string;
-  rate: string;
-  priceImpactPct: number;
-  timeEstimate: number;
-  requestId?: string;
-  steps?: any[];
-}
-
-export interface PortfolioQuoteLegResult {
-  assetSymbol: string;
-  assetAddress: string;
-  basisPoints: number;
-  percentage: number;
-  allocatedInAmount: string;
-  allocatedInAmountFormatted: string;
-  quote: SingleSwapQuoteResult;
-  isFallbackUsdg?: boolean;
-}
-
-export interface PortfolioSettlementQuoteResult {
-  recipientHandle?: string | null;
-  recipientWallet: string;
-  inputToken: V2TokenInfo;
-  totalInAmount: string;
-  totalInAmountFormatted: string;
-  legs: PortfolioQuoteLegResult[];
-}
-
-// ── Invoicing & Bot Types ──────────────────────────────────────────────────
-
-export interface V2Invoice {
-  id: number;
-  invoice_id: string;
-  recipient_handle: string;
-  recipient_wallet: string;
-  target_amount: string;
-  target_token_symbol: string;
-  memo: string | null;
-  status: "pending" | "paid" | "expired";
-  expiry_at: string;
-  created_at: string;
-}
-
-export interface V2ParsedBotIntent {
-  action: "send" | "invoice" | "election" | "unrecognized";
-  target: string | null;
-  targetType: "x_account" | "hashtag" | "wallet" | null;
-  amount: number | null;
-  token: string | null;
-  memo: string | null;
-  elections: { symbol: string; basisPoints: number }[] | null;
-  confidence: number;
-}
-```
+### B. Dynamic Pay Route (`/pay/$target`)
+The pay page at `src/routes/pay.$target.tsx` resolves `$target` polymorphically:
+* **Handle / Tag** (e.g. `/pay/nobody` or `/pay/alex`): Resolves the receiver's live portfolio and allows the sender to enter any custom payment amount and token.
+* **Pending Bot Payment** (e.g. `/pay/pnd_...`): Automatically pre-populates the locked sender, amount, and recipient allocation.
+* **Invoice Pay-Link** (e.g. `/pay/inv_...`): Fetches invoice details via `GET /v2/invoices/:invoiceId` and settles directly into the current portfolio mix.
 
 ---
 
-## 4. Complete REST API Reference
+## 6. Complete REST API Reference
 
-### A. RWA Token Registry
+### A. Assets & Catalog
 
 #### `GET /v2/assets`
-Returns directory of verified Robinhood tokenized equities, ETFs, commodities, and base currencies (`ETH`, `USDG`).
+Returns directory of verified Robinhood tokenized equities, ETFs, and base currencies (`ETH`, `USDG`).
 * **Query Parameters**:
-  * `q` *(optional)*: Search string (e.g. `apple`, `SPY`, `tesla`, `gold`).
-  * `featured` *(optional)*: `true` to return only featured assets.
-
-```typescript
-const res = await fetch("https://api.tagiopay.com/v2/assets?featured=true");
-const data: V2AssetsResponse = await res.json();
-```
+  * `q` *(optional)*: Search string (e.g. `apple`, `spacex`, `tesla`, `nvidia`).
+  * `featured` *(optional)*: `true` to return featured assets only.
 
 #### `GET /v2/assets/:symbolOrAddress`
-Quick lookup and alias resolution (e.g. `SPYR` $\rightarrow$ `0x1111111111111111111111111111111111111111`).
+Resolves aliases and contract addresses (e.g. `SPCX` $\rightarrow$ `0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa`).
 
 ---
 
-### B. Handle & Portfolio Elections
+### B. Handles & Receive-Mix Preferences
 
 #### `GET /v2/handles/:handle`
-Fetches tag ownership, profile metadata, and active portfolio allocation.
-
-```typescript
-const res = await fetch("https://api.tagiopay.com/v2/handles/alex");
-const handleData: V2HandleDetails = await res.json();
-```
+Fetches tag ownership, metadata, and active portfolio elections.
 
 #### `POST /v2/handles/register`
 Claims/registers a tag for a connected EVM wallet on Robinhood Chain.
@@ -213,74 +137,51 @@ Claims/registers a tag for a connected EVM wallet on Robinhood Chain.
   "handle": "alex",
   "ownerWallet": "0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9",
   "displayName": "Alex Turner",
-  "avatarUrl": "https://...",
-  "bio": "Building on Robinhood Chain",
   "elections": [
-    { "symbol": "SPYR", "basisPoints": 6000 },
+    { "symbol": "SPCX", "basisPoints": 6000 },
     { "symbol": "USDG", "basisPoints": 3000 },
-    { "symbol": "GLDR", "basisPoints": 1000 }
+    { "symbol": "NVDA", "basisPoints": 1000 }
   ]
 }
 ```
 
 #### `PUT /v2/handles/:handle/elections`
 Updates the tag's target portfolio allocation (validates that total basis points sum to `10000` / 100%).
-
-```typescript
-const res = await fetch("https://api.tagiopay.com/v2/handles/alex/elections", {
-  method: "PUT",
-  headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({
-    ownerWallet: "0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9",
-    elections: [
-      { "symbol": "NVDAR", "basisPoints": 7000 },
-      { "symbol": "USDG", "basisPoints": 3000 }
-    ]
-  })
-});
-```
+* **Headers**: `Authorization: Bearer <jwt>` (or `ownerWallet` in body).
 
 #### `GET /v2/handles/owner/:walletAddress`
 Lists all tags owned by a specific wallet.
 
 ---
 
-### C. Multi-Leg Routing & Settlement
+### C. Multi-Leg Routing & Settlement Engine
 
 #### `POST /v2/settle/quote` (Single Pair Quote)
-Quotes a single token-to-token swap via Relay on Robinhood Chain with 0.15% fee.
-* **Body**:
-```json
-{
-  "fromSymbolOrAddress": "ETH",
-  "toSymbolOrAddress": "SPYR",
-  "amountIn": 0.5,
-  "userWallet": "0x..."
-}
-```
+Quotes a single token-to-token swap via Uniswap V4 / V3 / Relay on Robinhood Chain with 0.15% protocol fee.
+* Returns executable `steps` array ready for wallet signing.
 
 #### `POST /v2/settle/election-quote` (Portfolio Multi-Leg Quote)
-Takes inbound payment amount in ETH or USDG, automatically allocates it across the recipient's elected portfolio, and quotes all legs concurrently via Relay.
+Allocates inbound payment amount across the recipient's elected portfolio and quotes all legs concurrently.
 * **Body**:
 ```json
 {
   "recipientHandle": "alex",
   "fromSymbolOrAddress": "USDG",
-  "amountIn": 1000,
-  "userWallet": "0x..."
+  "amountIn": 100,
+  "userWallet": "0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9"
 }
 ```
-* **Response**: Returns full breakdown with allocated amounts, expected RWA outputs, and Relay transaction steps.
+* **Response**: Returns full breakdown per leg with expected RWA outputs, price impact, and serialized transaction `steps`.
 
 #### `POST /v2/settle/confirm`
 Records confirmed settlement transaction signature and receipt in the database.
 
 ---
 
-### D. Invoices & Pay-Links
+### D. Invoices & Pay Requests
 
 #### `POST /v2/invoices`
-Generates a unique invoice pay-link (e.g. `tagiopay.com/pay/inv_abc123`).
+Generates a unique invoice pay-link.
 * **Body**:
 ```json
 {
@@ -296,124 +197,19 @@ Retrieves invoice status, amount, and recipient's active portfolio election.
 
 ---
 
-### E. Groq AI Natural Language Bot Endpoints
+### E. Groq AI Bot Endpoints
 
 #### `POST /v2/bot/parse-intent`
 Parses free-text tweets using Groq AI (`llama-3.3-70b-versatile`) into structured intents.
 * **Body**: `{ "text": "@TagioPayBot send @vlad 40 usdg" }`
-* **Response**:
-```json
-{
-  "action": "send",
-  "target": "@vlad",
-  "targetType": "x_account",
-  "amount": 40,
-  "token": "USDG",
-  "confidence": 1.0
-}
-```
 
 #### `POST /v2/bot/route-intent`
 Routes free text or structured parameters into a complete transaction execution plan.
 
 ---
 
-### F. Authentication & X OAuth 2.0 PKCE
+## 7. Guardrails & Execution Rules
 
-* `POST /v2/auth/signin`: Sign in with EVM signature (Robinhood Chain).
-* `GET /v2/auth/x/callback`: Dedicated v2 OAuth 2.0 PKCE callback handler.
-
----
-
-## 5. Ready-to-Use React / TanStack Query Hooks
-
-Drop these custom hooks into your frontend (e.g., `src/hooks/useTagioV2.ts`):
-
-```typescript
-import { useQuery, useMutation } from "@tanstack/react-query";
-
-const API_BASE = "https://api.tagiopay.com";
-
-// 1. Hook: Fetch Handle Details & Elections
-export function useV2Handle(handle: string) {
-  return useQuery({
-    queryKey: ["v2-handle", handle],
-    queryFn: async () => {
-      if (!handle) return null;
-      const clean = handle.replace(/^#|^@/, "");
-      const res = await fetch(`${API_BASE}/v2/handles/${clean}`);
-      if (!res.ok) throw new Error("Handle not found");
-      return res.json();
-    },
-    enabled: Boolean(handle),
-  });
-}
-
-// 2. Hook: Search Robinhood RWA Asset Catalog
-export function useV2Assets(query: string = "", featuredOnly: boolean = false) {
-  return useQuery({
-    queryKey: ["v2-assets", query, featuredOnly],
-    queryFn: async () => {
-      const url = new URL(`${API_BASE}/v2/assets`);
-      if (featuredOnly) url.searchParams.set("featured", "true");
-      if (query) url.searchParams.set("q", query);
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error("Failed to fetch assets");
-      return res.json();
-    },
-    staleTime: 1000 * 60 * 5,
-  });
-}
-
-// 3. Hook: Calculate Multi-Leg Election Quote
-export function useV2ElectionQuote(params: {
-  handle?: string;
-  fromToken: string;
-  amount: number | string;
-  userWallet?: string;
-}) {
-  return useQuery({
-    queryKey: ["v2-election-quote", params.handle, params.fromToken, params.amount],
-    queryFn: async () => {
-      if (!params.handle || !params.amount || Number(params.amount) <= 0) return null;
-      const res = await fetch(`${API_BASE}/v2/settle/election-quote`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipientHandle: params.handle,
-          fromSymbolOrAddress: params.fromToken,
-          amountIn: Number(params.amount),
-          userWallet: params.userWallet,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to calculate settlement quote");
-      return res.json();
-    },
-    enabled: Boolean(params.handle && Number(params.amount) > 0),
-    refetchInterval: 15000,
-  });
-}
-
-// 4. Hook: Groq AI Intent Parser
-export function useParseBotIntent() {
-  return useMutation({
-    mutationFn: async (text: string) => {
-      const res = await fetch(`${API_BASE}/v2/bot/parse-intent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      if (!res.ok) throw new Error("Failed to parse intent");
-      return res.json();
-    },
-  });
-}
-```
-
----
-
-## 6. Guardrails & Honest Boundaries
-
-1. **Protocol Fee**: Automatically attached to Relay quotes at **0.15% (15 bps)** routed to `0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9`.
-2. **Slippage Protection & Fallback**: If any RWA leg breaches slippage bounds, it safe-settles into **USDG** rather than executing a bad fill.
-3. **Same-Asset Zero Fee**: Paying directly in the token the recipient holds (e.g. USDG $\rightarrow$ USDG) is fee-free and bypasses DEX routing.
+1. **Same-Asset Zero Fee**: 1:1 conversions (e.g. USDG $\rightarrow$ USDG or ETH $\rightarrow$ ETH) incur 0% swap fees and execute via a single direct transfer step.
+2. **Protocol Fee**: Automatically attached to Uniswap / Relay swap quotes at **0.15% (15 bps)** routed to fee treasury `0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9`.
+3. **Slippage Protection**: Thin-pool swap slippage tolerances scale dynamically with price impact. If an RWA leg fails liquidity, it safe-settles into **USDG**.
