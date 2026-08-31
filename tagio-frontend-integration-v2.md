@@ -78,19 +78,35 @@ All assets trade natively on Robinhood Chain with deep liquidity on **Uniswap V4
 
 ## 4. Tag Ownership & Authentication Architecture
 
-TagioFi v2 supports **Wallet-First Ownership** with optional **Twitter/X Identity Linking**:
+TagioFi v2 onboarding is a **two-step, mandatory sequence**:
 
-### A. Wallet-First Claiming (`POST /v2/handles/register`)
-Users claim tags directly with their connected Robinhood Chain EVM wallet.
-* No social login required to claim tags, configure elections, or mint pay-links.
-* Tag ownership is enforced by wallet address signature.
+```
+Connect wallet  ──▶  Connect X  ──▶  Dashboard
+   (step 1)          (step 2)        (/app opens)
+```
 
-### B. Optional Twitter/X Account Linking (`POST /v2/auth/signin` & `GET /v2/auth/x/callback`)
-Users who wish to link their verified Twitter/X handle to their tag:
-1. Frontend calls `POST /v2/auth/signin` with `{ walletAddress, signature, message }`.
-2. Backend returns `{ needsXLink: true, authorizeUrl: "https://x.com/i/oauth2/authorize?..." }`.
-3. User authorizes on X $\rightarrow$ redirected to `GET /v2/auth/x/callback`.
-4. Backend updates `v2_handles` with verified `x_user_id` and `x_handle`, issuing a JWT containing both wallet and X identity.
+Wallet ownership decides which tags an address may edit; the verified X handle is the name `@TagioPayBot` settles against when someone tweets a payment. A wallet that has not completed the X hop has **no dashboard access** — there is no skip path, and every owner-scoped fetch (`/v2/handles/owner/:wallet`, elections, invoices) stays unissued until both steps are done.
+
+### A. Step 1 — Wallet Ownership (`POST /v2/handles/register`)
+Tags are owned by an EVM address on Robinhood Chain, and ownership is enforced by wallet signature. Claiming happens *inside* the dashboard, so it is reachable only after step 2.
+
+### B. Step 2 — Twitter/X Account Linking (`POST /v2/auth/signin` & `GET /v2/auth/x/callback`)
+1. Frontend calls `POST /v2/auth/signin` with `{ walletAddress, signature, message }`, where `message` is the canonical TagioFi sentence followed by wallet / chain / issued-at / nonce lines.
+2. Backend answers with either:
+   * `{ token, xLinked: true, xHandle, handle }` — this wallet is already bound to an X account, or
+   * `{ needsXLink: true, authorizeUrl: "https://x.com/i/oauth2/authorize?..." }`.
+3. On `needsXLink` the frontend performs a **full-page navigation** to `authorizeUrl` (X is another origin — never a `fetch`), remembering the page to return to.
+4. User authorizes on X → redirected to `GET /v2/auth/x/callback`.
+5. Backend updates `v2_handles` with the verified `x_user_id` / `x_handle` and redirects to `FRONTEND_URL/auth/callback#token=<jwt>&xHandle=<handle>`. The JWT rides in the **fragment**, so it never reaches a server log or a `Referer` header.
+6. `/auth/callback` (`src/routes/auth.callback.tsx`) decodes the JWT's `walletAddress`, stores `{ token, walletAddress, xHandle, expiresAt }`, strips the fragment from the address bar, and returns the user to the page that started the hop (default `/app`).
+
+Failures come back as `FRONTEND_URL/auth/callback?error=<code>`; `expired_or_invalid_state` and `access_denied` get their own copy.
+
+### C. Session Rules (frontend)
+* The session is keyed to the wallet that signed for it. Disconnecting, or switching accounts in the wallet, clears it immediately — a stale session must never render another address's tags.
+* An expired JWT (`exp` is decoded client-side for display only, never trusted for authorization) drops the session and returns the user to step 2.
+* `src/hooks/useTagioAuth.ts` owns the state machine: `restoring → connect-wallet → link-x → linking → ready`. `<AuthGate>` (`src/components/tf/auth-gate.tsx`) renders the dashboard only in `ready`.
+* Senders are **not** gated: `/pay/$target` needs no signature and no X account.
 
 ---
 

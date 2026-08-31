@@ -149,13 +149,13 @@ function SplitPanel() {
 const STEPS = [
   {
     index: "01",
-    title: "Claim your tag",
-    body: "Register a handle against your wallet. It becomes the address people actually use — no 42-character strings.",
+    title: "Connect wallet, then X",
+    body: "Your wallet owns the tag; your verified X handle is the name people actually pay. Both are required before the dashboard opens.",
   },
   {
     index: "02",
-    title: "Elect your mix",
-    body: "Allocate in basis points across verified tokenized equities, ETFs, commodities and stables. Must total 100%.",
+    title: "Claim a tag, elect your mix",
+    body: "Register a handle, then allocate in basis points across verified tokenized equities, ETFs, commodities and stables. Must total 100%.",
   },
   {
     index: "03",
@@ -238,8 +238,8 @@ function ClosingCta() {
             Get paid in what you keep.
           </h2>
           <p className="mx-auto mt-6 max-w-lg text-balance text-lg leading-relaxed text-cream/55">
-            Set a receive-mix in under a minute. Nothing is custodied, and you can change it
-            whenever you want.
+            Connect your wallet, link X, and set a receive-mix in under a minute. Nothing is
+            custodied, and you can change it whenever you want.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
             <Link

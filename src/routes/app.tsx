@@ -1,6 +1,9 @@
 /**
  * Settlement studio: claim a tag, edit its receive-mix, and mint pay-links.
- * Everything here is owner-scoped — the connected wallet must own the tag.
+ *
+ * Everything here is owner-scoped — the connected wallet must own the tag —
+ * and the whole page sits behind <AuthGate>: connect wallet → connect X →
+ * dashboard, in that order, with no way past the X step.
  */
 
 import { createFileRoute } from "@tanstack/react-router";
@@ -8,10 +11,10 @@ import { toast } from "sonner";
 import { useEffect, useMemo, useState } from "react";
 
 import { AllocationBar, legColor } from "@/components/tf/allocation-bar";
+import { AuthGate, XMark } from "@/components/tf/auth-gate";
 import { PageShell } from "@/components/tf/site-chrome";
 import { Aurora, SpotlightBackground, SpotlightCard } from "@/components/tf/spotlight";
-import { WalletButton } from "@/components/tf/wallet-button";
-import { useWallet } from "@/hooks/useWallet";
+import { useTagioAuth } from "@/hooks/useTagioAuth";
 import {
   useCreateV2Invoice,
   useRegisterV2Handle,
@@ -20,7 +23,7 @@ import {
   useV2Handle,
   useV2HandlesByOwner,
 } from "@/hooks/useTagioV2";
-import { cleanHandle, formatBps, friendlyError } from "@/lib/tagio-api";
+import { cleanHandle, formatBps, friendlyError, shortAddress } from "@/lib/tagio-api";
 import { cn } from "@/lib/utils";
 import type { V2ElectionInput } from "@/types/tagio-v2";
 
@@ -32,8 +35,11 @@ export const Route = createFileRoute("/app")({
 const TOTAL_BPS = 10_000;
 
 function StudioPage() {
-  const { address, isConnected, isRestoring } = useWallet();
-  const handlesQuery = useV2HandlesByOwner(address ?? undefined);
+  const auth = useTagioAuth();
+  const { address, stage, xHandle } = auth;
+  const isReady = stage === "ready";
+  // Owner-scoped data is only fetched once both steps are done.
+  const handlesQuery = useV2HandlesByOwner(isReady && address ? address : undefined);
   const [activeHandle, setActiveHandle] = useState<string | null>(null);
 
   // Memoized so the auto-select effect below doesn't re-run every render.
@@ -59,29 +65,30 @@ function StudioPage() {
               Your elections are stored against your tag in basis points and must total 100%. Change
               them any time — nothing is locked or custodied.
             </p>
+
+            {isReady ? (
+              <div className="mt-6 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full border border-ink/12 bg-lime/25 px-3.5 py-1.5 font-mono text-[0.8rem] font-semibold text-ink">
+                  <span className="size-1.5 rounded-full bg-lime-deep" aria-hidden="true" />
+                  {shortAddress(address)}
+                </span>
+                {xHandle ? (
+                  <span className="inline-flex items-center gap-2 rounded-full border border-ink/12 bg-cream/70 px-3.5 py-1.5 text-[0.8rem] font-semibold text-ink">
+                    <XMark className="size-3" />@{xHandle}
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={auth.signOut}
+                  className="rounded-full px-3 py-1.5 text-[0.8rem] font-semibold text-ink/45 transition-colors hover:text-ink"
+                >
+                  Sign out
+                </button>
+              </div>
+            ) : null}
           </header>
 
-          {isRestoring ? (
-            <SpotlightCard className="mt-12 flex flex-col items-center gap-3 p-14 text-center">
-              <h2 className="text-xl font-bold tracking-[-0.02em] text-ink">
-                Reconnecting your wallet…
-              </h2>
-              <p className="max-w-sm text-sm text-ink/55">
-                Restoring the session from your last visit.
-              </p>
-            </SpotlightCard>
-          ) : !isConnected ? (
-            <SpotlightCard className="mt-12 flex flex-col items-center gap-5 p-14 text-center">
-              <h2 className="text-xl font-bold tracking-[-0.02em] text-ink">
-                Connect a wallet to continue
-              </h2>
-              <p className="max-w-sm text-sm text-ink/55">
-                Tags are owned by an address on Robinhood Chain. Connect to see the tags you own or
-                claim a new one.
-              </p>
-              <WalletButton />
-            </SpotlightCard>
-          ) : (
+          <AuthGate auth={auth}>
             <div className="mt-12 grid gap-4 lg:grid-cols-[300px_1fr]">
               <div className="flex flex-col gap-4">
                 <SpotlightCard className="p-6">
@@ -150,7 +157,7 @@ function StudioPage() {
                 )}
               </div>
             </div>
-          )}
+          </AuthGate>
         </div>
       </section>
     </PageShell>
