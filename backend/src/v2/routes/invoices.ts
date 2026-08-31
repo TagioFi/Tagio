@@ -56,6 +56,52 @@ router.post("/v2/invoices", async (req, res, next) => {
   }
 });
 
+// GET /v2/invoices/owner/:walletAddress — List invoices minted by a wallet
+router.get("/v2/invoices/owner/:walletAddress", async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT * FROM v2_invoices 
+       WHERE LOWER(recipient_wallet) = LOWER($1)
+       ORDER BY created_at DESC LIMIT 50`,
+      [req.params.walletAddress]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /v2/pending/wallet/:walletAddress — List all actionable pending transactions / bot mentions
+router.get("/v2/pending/wallet/:walletAddress", async (req, res, next) => {
+  try {
+    const wallet = req.params.walletAddress.toLowerCase();
+
+    // Look up X handle if wallet is linked
+    const identityRes = await pool.query(
+      "SELECT x_handle FROM v2_wallet_identities WHERE LOWER(wallet_address) = $1 LIMIT 1",
+      [wallet]
+    );
+    const xHandle = identityRes.rows[0]?.x_handle || "";
+
+    // Query pending_transactions where this wallet or their X handle is sender or recipient
+    const { rows } = await pool.query(
+      `SELECT pt.*, pt.created_at as time
+       FROM pending_transactions pt
+       WHERE (
+         LOWER(pt.sender_address) = $1 
+         OR LOWER(pt.recipient_address) = $1
+         OR ($2 != '' AND (LOWER(pt.sender_handle) = LOWER($2) OR LOWER(pt.recipient_identifier) = LOWER($2) OR LOWER(pt.recipient_identifier) = LOWER('@' || $2)))
+       )
+       ORDER BY pt.created_at DESC LIMIT 50`,
+      [wallet, xHandle]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /v2/invoices/:invoiceId — Get invoice details
 router.get("/v2/invoices/:invoiceId", async (req, res, next) => {
   try {

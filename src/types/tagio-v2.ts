@@ -231,3 +231,27 @@ export interface V2CreateInvoiceResponse {
   payUrl: string;
   handleDetails: V2HandleDetails | null;
 }
+
+export interface V2PendingTransaction {
+  id: number;
+  request_id: string;
+  sender_handle?: string | null;
+  sender_address?: string | null;
+  recipient_identifier?: string | null;
+  recipient_address?: string | null;
+  amount: string;
+  token: string;
+  status: "pending" | "broadcasted" | "cancelled";
+  tweet_id?: string | null;
+  created_at: string;
+  expires_at?: string | null;
+}
+
+export interface V2SessionUser {
+  authenticated: boolean;
+  walletAddress: string;
+  xUserId: string | null;
+  xHandle: string | null;
+  isLinked: boolean;
+  handles: Array<{ handle: string; display_name?: string | null }>;
+}

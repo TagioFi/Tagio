@@ -214,3 +214,32 @@ export function useRouteBotIntent() {
       ),
   });
 }
+
+// ── F. Pending Transactions & Auth Session ──────────────────────────────────
+
+export function useV2InvoicesByOwner(walletAddress: string | undefined) {
+  return useQuery({
+    queryKey: ["v2-invoices-by-owner", walletAddress?.toLowerCase()],
+    queryFn: () => api.get<V2Invoice[]>(`/v2/invoices/owner/${walletAddress}`),
+    enabled: Boolean(walletAddress),
+    refetchInterval: 10000,
+  });
+}
+
+export function useV2PendingTransactions(walletAddress: string | undefined) {
+  return useQuery({
+    queryKey: ["v2-pending-transactions", walletAddress?.toLowerCase()],
+    queryFn: () => api.get<any[]>(`/v2/pending/wallet/${walletAddress}`),
+    enabled: Boolean(walletAddress),
+    refetchInterval: 8000,
+  });
+}
+
+export function useV2AuthMe() {
+  return useQuery({
+    queryKey: ["v2-auth-me"],
+    queryFn: () => api.get<any>("/v2/auth/me"),
+    retry: false,
+    staleTime: 1000 * 60 * 2,
+  });
+}

@@ -19,10 +19,13 @@ import {
   useV2Assets,
   useV2Handle,
   useV2HandlesByOwner,
+  useV2InvoicesByOwner,
+  useV2PendingTransactions,
+  useV2AuthMe,
 } from "@/hooks/useTagioV2";
 import { cleanHandle, formatBps, friendlyError } from "@/lib/tagio-api";
 import { cn } from "@/lib/utils";
-import type { V2ElectionInput } from "@/types/tagio-v2";
+import type { V2ElectionInput, V2Invoice, V2PendingTransaction } from "@/types/tagio-v2";
 
 export const Route = createFileRoute("/app")({
   head: () => ({ meta: [{ title: "Settlement studio · TagioFi" }] }),
@@ -34,14 +37,54 @@ const TOTAL_BPS = 10_000;
 function StudioPage() {
   const { address, isConnected, isRestoring } = useWallet();
   const handlesQuery = useV2HandlesByOwner(address ?? undefined);
-  const [activeHandle, setActiveHandle] = useState<string | null>(null);
+  const authMeQuery = useV2AuthMe();
+  const pendingQuery = useV2PendingTransactions(address ?? undefined);
+  const invoicesQuery = useV2InvoicesByOwner(address ?? undefined);
 
-  // Memoized so the auto-select effect below doesn't re-run every render.
+  const [activeHandle, setActiveHandle] = useState<string | null>(null);
+  const [dismissedPendingIds, setDismissedPendingIds] = useState<string[]>([]);
+  const [dismissedXPrompt, setDismissedXPrompt] = useState(false);
+
+  // Memoized handles list
   const handles = useMemo(() => handlesQuery.data ?? [], [handlesQuery.data]);
 
   useEffect(() => {
     if (!activeHandle && handles.length) setActiveHandle(handles[0]!.handle);
   }, [handles, activeHandle]);
+
+  // Read dismissed state from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const stored = localStorage.getItem("tagio_dismissed_x_prompt");
+      if (stored === "true") setDismissedXPrompt(true);
+    }
+  }, []);
+
+  // Modal 1 Trigger: First actionable pending transaction
+  const pendingTxs = (pendingQuery.data ?? []).filter(
+    (tx: any) => tx.status === "pending" && !dismissedPendingIds.includes(tx.request_id)
+  );
+  const activePendingTx = pendingTxs.length > 0 ? pendingTxs[0] : null;
+
+  // Modal 2 Trigger: Unclaimed connected X handle
+  const linkedXHandle = authMeQuery.data?.xHandle;
+  const isXHandleClaimed =
+    !linkedXHandle ||
+    handles.some((h) => h.handle.toLowerCase() === linkedXHandle.toLowerCase());
+  
+  const showClaimXModal =
+    !activePendingTx && Boolean(linkedXHandle) && !isXHandleClaimed && !dismissedXPrompt;
+
+  const dismissPendingTx = (reqId: string) => {
+    setDismissedPendingIds((prev) => [...prev, reqId]);
+  };
+
+  const dismissXClaimModal = () => {
+    setDismissedXPrompt(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("tagio_dismissed_x_prompt", "true");
+    }
+  };
 
   return (
     <PageShell>
@@ -82,7 +125,7 @@ function StudioPage() {
               <WalletButton />
             </SpotlightCard>
           ) : (
-            <div className="mt-12 grid gap-4 lg:grid-cols-[300px_1fr]">
+            <div className="mt-12 grid gap-6 lg:grid-cols-[300px_1fr]">
               <div className="flex flex-col gap-4">
                 <SpotlightCard className="p-6">
                   <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink/40">
@@ -132,7 +175,12 @@ function StudioPage() {
                   </ul>
                 </SpotlightCard>
 
-                <ClaimTagCard ownerWallet={address!} onClaimed={setActiveHandle} />
+                <ClaimTagCard ownerWallet={address!} onClaimed={setActiveHandle} defaultHandle={linkedXHandle ?? ""} />
+
+                <ActivitySection
+                  pendingTxs={pendingQuery.data ?? []}
+                  invoices={invoicesQuery.data ?? []}
+                />
               </div>
 
               <div className="flex flex-col gap-4">
@@ -153,22 +201,280 @@ function StudioPage() {
           )}
         </div>
       </section>
+
+      {/* Modal 1: Pending Transaction to Review & Sign */}
+      {activePendingTx ? (
+        <PendingTxReviewModal
+          tx={activePendingTx}
+          onDismiss={() => dismissPendingTx(activePendingTx.request_id)}
+        />
+      ) : null}
+
+      {/* Modal 2: Claim Official X Tag Prompt */}
+      {showClaimXModal ? (
+        <ClaimXTagModal
+          xHandle={linkedXHandle!}
+          ownerWallet={address!}
+          onClaimed={(h) => {
+            setActiveHandle(h);
+            dismissXClaimModal();
+          }}
+          onDismiss={dismissXClaimModal}
+        />
+      ) : null}
     </PageShell>
   );
 }
 
-/* ── Claim ──────────────────────────────────────────────────────────────── */
+/* ── Modal 1: Pending Transaction Review & Sign ────────────────────────── */
+
+function PendingTxReviewModal({
+  tx,
+  onDismiss,
+}: {
+  tx: any;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <SpotlightCard className="relative w-full max-w-md border-amber-500/40 p-8 shadow-2xl">
+        <span className="tf-chip bg-amber-500/20 font-bold text-amber-900 dark:text-amber-300">
+          Action Required
+        </span>
+
+        <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink">
+          Pending Transaction
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-ink/65">
+          You have an incoming payment waiting to settle into your elected mix on Robinhood Chain.
+        </p>
+
+        <div className="mt-5 space-y-2.5 rounded-xl border border-ink/10 bg-cream/70 p-4 text-sm">
+          <div className="flex items-center justify-between">
+            <span className="text-ink/50">Amount:</span>
+            <span className="font-mono font-bold text-ink">
+              {tx.amount} {tx.token}
+            </span>
+          </div>
+          {tx.sender_handle ? (
+            <div className="flex items-center justify-between">
+              <span className="text-ink/50">From:</span>
+              <span className="font-semibold text-ink">@{tx.sender_handle}</span>
+            </div>
+          ) : null}
+          <div className="flex items-center justify-between">
+            <span className="text-ink/50">Target:</span>
+            <span className="font-semibold text-ink">
+              {tx.recipient_identifier || "Your Tag"}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-6 flex flex-col gap-2.5">
+          <a
+            href={`/pay/${tx.request_id}`}
+            className="w-full rounded-full bg-ink py-3 text-center text-sm font-bold text-cream transition-colors hover:bg-ink/85"
+          >
+            Review & Settle Now
+          </a>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="w-full rounded-full border border-ink/15 py-2.5 text-xs font-semibold text-ink/60 transition-colors hover:border-ink/30 hover:text-ink"
+          >
+            Dismiss for now
+          </button>
+        </div>
+      </SpotlightCard>
+    </div>
+  );
+}
+
+/* ── Modal 2: Claim Official X Tag Modal ───────────────────────────────── */
+
+function ClaimXTagModal({
+  xHandle,
+  ownerWallet,
+  onClaimed,
+  onDismiss,
+}: {
+  xHandle: string;
+  ownerWallet: string;
+  onClaimed: (handle: string) => void;
+  onDismiss: () => void;
+}) {
+  const register = useRegisterV2Handle();
+
+  const handleClaim = async () => {
+    const clean = cleanHandle(xHandle);
+    if (!clean) return;
+    try {
+      const created = await register.mutateAsync({
+        handle: clean,
+        ownerWallet,
+        displayName: xHandle,
+      });
+      toast.success(`@${created.handle} is claimed!`, {
+        description: "Configure your receive-mix below.",
+      });
+      onClaimed(created.handle);
+    } catch (err) {
+      toast.error("Couldn't claim tag", { description: friendlyError(err) });
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+      <SpotlightCard className="relative w-full max-w-md border-lime/40 p-8 shadow-2xl">
+        <span className="tf-chip bg-lime/30 font-bold text-ink">
+          Official Tag Available
+        </span>
+
+        <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink">
+          Claim @{xHandle}
+        </h2>
+        <p className="mt-2 text-sm leading-relaxed text-ink/65">
+          Your connected X account is <strong>@{xHandle}</strong>. Claim your official tag now with 1-click so people can tip and pay you directly on Twitter and Robinhood Chain.
+        </p>
+
+        <div className="mt-6 flex flex-col gap-2.5">
+          <button
+            type="button"
+            onClick={handleClaim}
+            disabled={register.isPending}
+            className="w-full rounded-full bg-ink py-3 text-sm font-bold text-cream transition-colors hover:bg-ink/85 disabled:opacity-50"
+          >
+            {register.isPending ? "Claiming…" : `Claim @${xHandle} (1-Click)`}
+          </button>
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="w-full rounded-full border border-ink/15 py-2.5 text-xs font-semibold text-ink/60 transition-colors hover:border-ink/30 hover:text-ink"
+          >
+            Maybe later
+          </button>
+        </div>
+      </SpotlightCard>
+    </div>
+  );
+}
+
+/* ── Activity & Invoices List ───────────────────────────────────────────── */
+
+function ActivitySection({
+  pendingTxs,
+  invoices,
+}: {
+  pendingTxs: any[];
+  invoices: V2Invoice[];
+}) {
+  const [tab, setTab] = useState<"pending" | "invoices">("pending");
+
+  return (
+    <SpotlightCard className="p-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink/40">
+          Activity
+        </h2>
+        <div className="flex gap-1 rounded-lg bg-cream/70 p-0.5 text-xs font-semibold">
+          <button
+            type="button"
+            onClick={() => setTab("pending")}
+            className={cn(
+              "rounded-md px-2.5 py-1 transition-colors",
+              tab === "pending" ? "bg-ink text-cream" : "text-ink/60 hover:text-ink"
+            )}
+          >
+            Pending ({pendingTxs.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setTab("invoices")}
+            className={cn(
+              "rounded-md px-2.5 py-1 transition-colors",
+              tab === "invoices" ? "bg-ink text-cream" : "text-ink/60 hover:text-ink"
+            )}
+          >
+            Invoices ({invoices.length})
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        {tab === "pending" ? (
+          pendingTxs.length === 0 ? (
+            <p className="py-4 text-center text-xs text-ink/40">No pending transactions.</p>
+          ) : (
+            pendingTxs.map((tx: any) => (
+              <a
+                key={tx.id || tx.request_id}
+                href={`/pay/${tx.request_id}`}
+                className="flex items-center justify-between rounded-xl border border-ink/8 bg-cream/40 px-3.5 py-2.5 text-xs transition-colors hover:bg-cream/80"
+              >
+                <div>
+                  <p className="font-bold text-ink">
+                    {tx.amount} {tx.token}
+                  </p>
+                  <p className="text-ink/50">
+                    {tx.sender_handle ? `From @${tx.sender_handle}` : "Inbound Payment"}
+                  </p>
+                </div>
+                <span className="rounded-full bg-amber-500/15 px-2.5 py-1 font-semibold text-amber-900 dark:text-amber-300">
+                  {tx.status}
+                </span>
+              </a>
+            ))
+          )
+        ) : invoices.length === 0 ? (
+          <p className="py-4 text-center text-xs text-ink/40">No invoices created yet.</p>
+        ) : (
+          invoices.map((inv) => (
+            <div
+              key={inv.id || inv.invoice_id}
+              className="flex items-center justify-between rounded-xl border border-ink/8 bg-cream/40 px-3.5 py-2.5 text-xs"
+            >
+              <div>
+                <p className="font-bold text-ink">
+                  {inv.target_amount} {inv.target_token_symbol}
+                </p>
+                <p className="text-ink/50 truncate max-w-[120px]">
+                  {inv.memo || `@${inv.recipient_handle}`}
+                </p>
+              </div>
+              <a
+                href={`/pay/${inv.invoice_id}`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full border border-ink/15 px-2.5 py-1 font-semibold text-ink/70 hover:border-ink/30 hover:text-ink"
+              >
+                Open
+              </a>
+            </div>
+          ))
+        )}
+      </div>
+    </SpotlightCard>
+  );
+}
+
+/* ── Claim Tag Card ─────────────────────────────────────────────────────── */
 
 function ClaimTagCard({
   ownerWallet,
   onClaimed,
+  defaultHandle = "",
 }: {
   ownerWallet: string;
   onClaimed: (handle: string) => void;
+  defaultHandle?: string;
 }) {
   const register = useRegisterV2Handle();
-  const [handle, setHandle] = useState("");
+  const [handle, setHandle] = useState(defaultHandle);
   const [displayName, setDisplayName] = useState("");
+
+  useEffect(() => {
+    if (defaultHandle && !handle) setHandle(defaultHandle);
+  }, [defaultHandle]);
 
   const submit = async () => {
     const clean = cleanHandle(handle);
@@ -218,80 +524,83 @@ function ClaimTagCard({
         type="button"
         onClick={submit}
         disabled={register.isPending || cleanHandle(handle).length < 2}
-        className="mt-3 w-full rounded-full bg-ink py-2.5 text-sm font-bold text-cream transition-colors hover:bg-ink/85 disabled:opacity-45"
+        className="mt-4 w-full rounded-full bg-ink py-2.5 text-sm font-bold text-cream transition-colors hover:bg-ink/85 disabled:opacity-45"
       >
-        {register.isPending ? "Claiming…" : "Claim"}
+        {register.isPending ? "Claiming…" : "Claim tag"}
       </button>
 
       {register.isError ? (
-        <p className="mt-3 text-xs text-destructive">{friendlyError(register.error)}</p>
+        <p className="mt-3 text-sm text-destructive">{friendlyError(register.error)}</p>
       ) : null}
     </SpotlightCard>
   );
 }
 
-/* ── Elections ──────────────────────────────────────────────────────────── */
+/* ── Election Editor ────────────────────────────────────────────────────── */
 
-function ElectionEditor({ handle, ownerWallet }: { handle: string; ownerWallet: string }) {
-  const handleQuery = useV2Handle(handle);
-  const assetsQuery = useV2Assets("", true);
+function ElectionEditor({
+  handle,
+  ownerWallet,
+}: {
+  handle: string;
+  ownerWallet: string;
+}) {
+  const detail = useV2Handle(handle);
+  const assetsQuery = useV2Assets();
   const update = useUpdateV2Elections();
 
   const [rows, setRows] = useState<V2ElectionInput[]>([]);
   const [dirty, setDirty] = useState(false);
 
-  // Reset the draft whenever we switch tags or the server copy changes.
+  // Sync state when detail query loads/changes.
   useEffect(() => {
-    const elections = handleQuery.data?.elections ?? [];
-    setRows(
-      elections
-        .filter((election) => election.isActive)
-        .map((election) => ({ symbol: election.symbol, basisPoints: election.basisPoints })),
-    );
-    setDirty(false);
-  }, [handleQuery.data]);
+    if (detail.data?.elections) {
+      setRows(
+        detail.data.elections.map((item) => ({
+          symbol: item.symbol,
+          basisPoints: item.basisPoints,
+        })),
+      );
+      setDirty(false);
+    }
+  }, [detail.data]);
 
-  const total = useMemo(() => rows.reduce((sum, row) => sum + row.basisPoints, 0), [rows]);
+  const options = assetsQuery.data?.assets ?? [];
+  const total = rows.reduce((sum, item) => sum + item.basisPoints, 0);
   const balanced = total === TOTAL_BPS;
 
-  const options = useMemo(() => {
-    const source = assetsQuery.data;
-    const pool = [...(source?.baseCurrencies ?? []), ...(source?.featured ?? source?.assets ?? [])];
-    const seen = new Set<string>();
-    return pool.filter((asset) => {
-      if (seen.has(asset.symbol)) return false;
-      seen.add(asset.symbol);
-      return true;
-    });
-  }, [assetsQuery.data]);
-
   const setRow = (index: number, patch: Partial<V2ElectionInput>) => {
-    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-    setDirty(true);
-  };
-
-  const addRow = () => {
-    const used = new Set(rows.map((row) => row.symbol));
-    const next = options.find((asset) => !used.has(asset.symbol));
-    setRows((current) => [...current, { symbol: next?.symbol ?? "USDG", basisPoints: 0 }]);
+    setRows((prev) => {
+      const next = [...prev];
+      next[index] = { ...next[index]!, ...patch };
+      return next;
+    });
     setDirty(true);
   };
 
   const removeRow = (index: number) => {
-    setRows((current) => current.filter((_, i) => i !== index));
+    setRows((prev) => prev.filter((_, idx) => idx !== index));
     setDirty(true);
   };
 
-  /** Distributes the remainder onto the last row so the draft can be saved. */
+  const addRow = () => {
+    const existing = new Set(rows.map((row) => row.symbol));
+    const nextAsset = options.find((asset) => !existing.has(asset.symbol)) ?? options[0];
+    if (!nextAsset) return;
+    const remaining = Math.max(0, TOTAL_BPS - total);
+    setRows((prev) => [...prev, { symbol: nextAsset.symbol, basisPoints: remaining }]);
+    setDirty(true);
+  };
+
   const balance = () => {
-    if (!rows.length) return;
-    const remainder = TOTAL_BPS - total;
-    setRows((current) =>
-      current.map((row, i) =>
-        i === current.length - 1
-          ? { ...row, basisPoints: Math.max(0, row.basisPoints + remainder) }
-          : row,
-      ),
+    if (rows.length === 0) return;
+    const share = Math.floor(TOTAL_BPS / rows.length);
+    const remainder = TOTAL_BPS - share * rows.length;
+    setRows(
+      rows.map((row, idx) => ({
+        symbol: row.symbol,
+        basisPoints: share + (idx === 0 ? remainder : 0),
+      })),
     );
     setDirty(true);
   };
@@ -301,21 +610,25 @@ function ElectionEditor({ handle, ownerWallet }: { handle: string; ownerWallet: 
     try {
       await update.mutateAsync({ handle, ownerWallet, elections: rows });
       setDirty(false);
-      toast.success("Receive-mix saved", {
-        description: `Payments to @${handle} now settle into ${rows.map((row) => row.symbol).join(" · ")}.`,
+      toast.success("Mix updated", {
+        description: `Inbound payments to @${handle} now route to this allocation.`,
       });
     } catch (err) {
-      toast.error("Couldn't save your mix", { description: friendlyError(err) });
+      toast.error("Couldn't save mix", { description: friendlyError(err) });
     }
   };
 
   return (
     <SpotlightCard className="p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink/40">Receive-mix</h2>
-          <p className="mt-1 text-xl font-extrabold tracking-[-0.03em] text-ink">@{handle}</p>
+          <span className="tf-chip">Receive-mix</span>
+          <h2 className="mt-3 text-2xl font-bold tracking-tight text-ink">@{handle}</h2>
+          <p className="mt-1 text-sm text-ink/55">
+            Payments to @{handle} settle into this asset basket in a single transaction.
+          </p>
         </div>
+
         <span
           className={cn(
             "tf-numeric rounded-full px-3.5 py-1.5 text-sm font-bold transition-colors",
@@ -346,7 +659,6 @@ function ElectionEditor({ handle, ownerWallet }: { handle: string; ownerWallet: 
               aria-label="Asset"
               className="min-w-28 rounded-lg border border-ink/12 bg-card px-2.5 py-1.5 font-mono text-sm font-semibold text-ink outline-none"
             >
-              {/* Keep the current symbol selectable even if the registry hasn't loaded. */}
               {!options.some((asset) => asset.symbol === row.symbol) ? (
                 <option value={row.symbol}>{row.symbol}</option>
               ) : null}
