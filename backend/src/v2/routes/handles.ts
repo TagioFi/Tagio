@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { isAddress } from "viem";
+import { pool } from "../../db/pool";
 import {
   getHandleDetails,
   registerHandle,
@@ -24,14 +25,12 @@ router.get("/v2/handles/:handle", async (req, res, next) => {
   }
 });
 
-// POST /v2/handles/register — Register a new handle with portfolio mix
+// POST /v2/handles/register — Register a new handle with portfolio mix (requires verified X identity)
 router.post("/v2/handles/register", async (req, res, next) => {
   try {
     const {
       handle,
       ownerWallet,
-      xUserId,
-      xHandle,
       displayName,
       avatarUrl,
       bio,
@@ -40,8 +39,6 @@ router.post("/v2/handles/register", async (req, res, next) => {
     } = req.body as {
       handle?: string;
       ownerWallet?: string;
-      xUserId?: string;
-      xHandle?: string;
       displayName?: string;
       avatarUrl?: string;
       bio?: string;
@@ -59,11 +56,29 @@ router.post("/v2/handles/register", async (req, res, next) => {
       return;
     }
 
+    const normalizedWallet = ownerWallet.toLowerCase();
+
+    // Verify that the claiming wallet has an authenticated X identity in v2_wallet_identities
+    const identityRes = await pool.query(
+      "SELECT x_user_id, x_handle FROM v2_wallet_identities WHERE LOWER(wallet_address) = $1 LIMIT 1",
+      [normalizedWallet]
+    );
+
+    if (identityRes.rows.length === 0 || !identityRes.rows[0].x_user_id) {
+      res.status(403).json({
+        error: "A verified X (Twitter) account must be linked before claiming a tag. Please sign in with X first.",
+        needsXLink: true,
+      });
+      return;
+    }
+
+    const identity = identityRes.rows[0];
+
     const registered = await registerHandle({
       handle,
-      ownerWallet,
-      xUserId,
-      xHandle,
+      ownerWallet: normalizedWallet,
+      xUserId: identity.x_user_id,
+      xHandle: identity.x_handle,
       displayName,
       avatarUrl,
       bio,
@@ -109,11 +124,11 @@ router.put("/v2/handles/:handle/elections", async (req, res, next) => {
   }
 });
 
-// GET /v2/handles/owner/:wallet — List all handles owned by a wallet
-router.get("/v2/handles/owner/:wallet", async (req, res, next) => {
+// GET /v2/handles/owner/:walletAddress — List all handles owned by a wallet
+router.get("/v2/handles/owner/:walletAddress", async (req, res, next) => {
   try {
-    const handles = await listHandlesByOwner(req.params.wallet);
-    res.json({ ownerWallet: req.params.wallet, total: handles.length, handles });
+    const handles = await listHandlesByOwner(req.params.walletAddress);
+    res.json(handles);
   } catch (err) {
     next(err);
   }
