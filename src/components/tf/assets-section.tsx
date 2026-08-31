@@ -22,16 +22,17 @@ const ASSET_TYPE_LABEL: Record<V2AssetType, string> = {
 };
 
 const FALLBACK_SYMBOLS = [
-  "SPYR",
+  "SPCX",
   "USDG",
-  "GLDR",
-  "NVDAR",
-  "AAPLR",
-  "TSLAR",
+  "AAPL",
+  "NVDA",
+  "TSLA",
   "ETH",
-  "QQQR",
-  "MSFTR",
-  "AMZNR",
+  "GOOGL",
+  "MSFT",
+  "AMZN",
+  "META",
+  "COIN",
 ];
 
 export function AssetMarquee({ className }: { className?: string }) {
