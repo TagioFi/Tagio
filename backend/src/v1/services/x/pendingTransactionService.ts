@@ -27,9 +27,21 @@ export interface CreatePendingTransactionInput {
 
 // Returns null if this source_ref was already processed (idempotent against
 // duplicate polling reads of the same mention/DM).
+
+async function ensureUserExists(walletAddress: string): Promise<void> {
+  if (!walletAddress) return;
+  await pool.query(
+    `INSERT INTO users (wallet_address, chain, created_at)
+     VALUES ($1, 'robinhood', now())
+     ON CONFLICT (wallet_address) DO NOTHING`,
+    [walletAddress.toLowerCase()]
+  );
+}
+
 export async function createPendingTransaction(
   input: CreatePendingTransactionInput,
 ): Promise<{ id: number } | null> {
+  await ensureUserExists(input.requestedByWallet);
   const { rows } = await pool.query(
     `INSERT INTO pending_transactions (
        requested_by_wallet, requested_by_x_user_id, source_ref,
@@ -79,6 +91,7 @@ export interface CreatePendingSwapInput {
 export async function createPendingSwap(
   input: CreatePendingSwapInput,
 ): Promise<{ id: number } | null> {
+  await ensureUserExists(input.requestedByWallet);
   const { rows } = await pool.query(
     `INSERT INTO pending_transactions (
        requested_by_wallet, requested_by_x_user_id, source_ref,
@@ -189,6 +202,7 @@ export interface CreatePendingDepositInput {
 export async function createPendingDeposit(
   input: CreatePendingDepositInput,
 ): Promise<{ id: number } | null> {
+  await ensureUserExists(input.requestedByWallet);
   const { rows } = await pool.query(
     `INSERT INTO pending_transactions (
        requested_by_wallet, requested_by_x_user_id, source_ref,
