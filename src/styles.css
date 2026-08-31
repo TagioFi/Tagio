@@ -5,8 +5,9 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
- * Design system definition.
+ * TagioFi design system.
  *
+ * Brand ground is warm cream, ink is near-black, the single accent is lime.
  * The @theme inline block maps CSS custom properties to Tailwind utility
  * classes (e.g. --color-primary -> bg-primary, text-primary).
  *
@@ -26,6 +27,10 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
+
+  --font-sans: "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -46,6 +51,15 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-ring-offset-background: var(--background);
+
+  /* Brand scale */
+  --color-cream: var(--cream);
+  --color-cream-deep: var(--cream-deep);
+  --color-ink: var(--ink);
+  --color-ink-soft: var(--ink-soft);
+  --color-lime: var(--lime);
+  --color-lime-deep: var(--lime-deep);
+
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
   --color-chart-3: var(--chart-3);
@@ -62,74 +76,88 @@
 }
 
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.129 0.042 264.695);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.129 0.042 264.695);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.129 0.042 264.695);
-  --primary: oklch(0.208 0.042 265.755);
-  --primary-foreground: oklch(0.984 0.003 247.858);
-  --secondary: oklch(0.968 0.007 247.896);
-  --secondary-foreground: oklch(0.208 0.042 265.755);
-  --muted: oklch(0.968 0.007 247.896);
-  --muted-foreground: oklch(0.554 0.046 257.417);
-  --accent: oklch(0.968 0.007 247.896);
-  --accent-foreground: oklch(0.208 0.042 265.755);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(0.929 0.013 255.508);
-  --input: oklch(0.929 0.013 255.508);
-  --ring: oklch(0.704 0.04 256.788);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.984 0.003 247.858);
-  --sidebar-foreground: oklch(0.129 0.042 264.695);
-  --sidebar-primary: oklch(0.208 0.042 265.755);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.968 0.007 247.896);
-  --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-  --sidebar-border: oklch(0.929 0.013 255.508);
-  --sidebar-ring: oklch(0.704 0.04 256.788);
+  --radius: 1rem;
+
+  /* Brand primitives */
+  --cream: oklch(0.947 0.018 84);
+  --cream-deep: oklch(0.912 0.024 84);
+  --ink: oklch(0.192 0.006 286);
+  --ink-soft: oklch(0.44 0.012 286);
+  --lime: oklch(0.906 0.184 122);
+  --lime-deep: oklch(0.822 0.176 124);
+
+  --background: var(--cream);
+  --foreground: var(--ink);
+  --card: oklch(0.982 0.009 84);
+  --card-foreground: var(--ink);
+  --popover: oklch(0.986 0.007 84);
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: oklch(0.982 0.009 84);
+  --secondary: oklch(0.926 0.021 84);
+  --secondary-foreground: var(--ink);
+  --muted: oklch(0.926 0.021 84);
+  --muted-foreground: var(--ink-soft);
+  --accent: var(--lime);
+  --accent-foreground: var(--ink);
+  --destructive: oklch(0.577 0.223 27.5);
+  --destructive-foreground: oklch(0.985 0.005 84);
+  --border: oklch(0.192 0.006 286 / 12%);
+  --input: oklch(0.192 0.006 286 / 16%);
+  --ring: var(--lime-deep);
+
+  --chart-1: oklch(0.906 0.184 122);
+  --chart-2: oklch(0.192 0.006 286);
+  --chart-3: oklch(0.822 0.176 124);
+  --chart-4: oklch(0.62 0.09 130);
+  --chart-5: oklch(0.44 0.012 286);
+
+  --sidebar: oklch(0.972 0.012 84);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--ink);
+  --sidebar-primary-foreground: oklch(0.982 0.009 84);
+  --sidebar-accent: oklch(0.926 0.021 84);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: oklch(0.192 0.006 286 / 10%);
+  --sidebar-ring: var(--lime-deep);
 }
 
 .dark {
-  --background: oklch(0.129 0.042 264.695);
-  --foreground: oklch(0.984 0.003 247.858);
-  --card: oklch(0.208 0.042 265.755);
-  --card-foreground: oklch(0.984 0.003 247.858);
-  --popover: oklch(0.208 0.042 265.755);
-  --popover-foreground: oklch(0.984 0.003 247.858);
-  --primary: oklch(0.929 0.013 255.508);
-  --primary-foreground: oklch(0.208 0.042 265.755);
-  --secondary: oklch(0.279 0.041 260.031);
-  --secondary-foreground: oklch(0.984 0.003 247.858);
-  --muted: oklch(0.279 0.041 260.031);
-  --muted-foreground: oklch(0.704 0.04 256.788);
-  --accent: oklch(0.279 0.041 260.031);
-  --accent-foreground: oklch(0.984 0.003 247.858);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.984 0.003 247.858);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.551 0.027 264.364);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.208 0.042 265.755);
-  --sidebar-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-accent: oklch(0.279 0.041 260.031);
-  --sidebar-accent-foreground: oklch(0.984 0.003 247.858);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.551 0.027 264.364);
+  --cream: oklch(0.947 0.018 84);
+  --cream-deep: oklch(0.912 0.024 84);
+  --ink: oklch(0.16 0.005 286);
+  --ink-soft: oklch(0.72 0.012 286);
+  --lime: oklch(0.906 0.184 122);
+  --lime-deep: oklch(0.822 0.176 124);
+
+  --background: oklch(0.16 0.005 286);
+  --foreground: oklch(0.958 0.012 84);
+  --card: oklch(0.208 0.006 286);
+  --card-foreground: oklch(0.958 0.012 84);
+  --popover: oklch(0.208 0.006 286);
+  --popover-foreground: oklch(0.958 0.012 84);
+  --primary: var(--lime);
+  --primary-foreground: oklch(0.16 0.005 286);
+  --secondary: oklch(0.258 0.007 286);
+  --secondary-foreground: oklch(0.958 0.012 84);
+  --muted: oklch(0.258 0.007 286);
+  --muted-foreground: oklch(0.72 0.012 286);
+  --accent: var(--lime);
+  --accent-foreground: oklch(0.16 0.005 286);
+  --destructive: oklch(0.704 0.19 22.2);
+  --destructive-foreground: oklch(0.985 0.005 84);
+  --border: oklch(1 0 0 / 12%);
+  --input: oklch(1 0 0 / 16%);
+  --ring: var(--lime);
+
+  --sidebar: oklch(0.19 0.006 286);
+  --sidebar-foreground: oklch(0.958 0.012 84);
+  --sidebar-primary: var(--lime);
+  --sidebar-primary-foreground: oklch(0.16 0.005 286);
+  --sidebar-accent: oklch(0.258 0.007 286);
+  --sidebar-accent-foreground: oklch(0.958 0.012 84);
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: var(--lime);
 }
 
 @layer base {
@@ -137,8 +165,298 @@
     border-color: var(--color-border);
   }
 
+  html {
+    scroll-behavior: smooth;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: var(--lime);
+    color: var(--ink);
+  }
+}
+
+/*
+ * ── Pointer-driven background ────────────────────────────────────────────────
+ * --mx / --my are viewport-relative pointer coords written by
+ * <SpotlightBackground /> on a rAF loop. Nothing re-renders in React; the
+ * browser only recomposites these layers.
+ */
+@layer components {
+  .tf-spotlight {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    opacity: var(--spot-opacity, 0);
+    transition: opacity 600ms ease;
+    background: radial-gradient(
+      520px circle at var(--mx, 50%) var(--my, 50%),
+      oklch(0.906 0.184 122 / 0.28),
+      oklch(0.906 0.184 122 / 0.1) 40%,
+      transparent 68%
+    );
+  }
+
+  /* Slow drifting aurora blobs behind the hero. */
+  .tf-aurora {
+    position: absolute;
+    inset: -20% -10% auto -10%;
+    height: 130%;
+    z-index: 0;
+    pointer-events: none;
+    filter: blur(72px);
+    opacity: 0.75;
+  }
+
+  .tf-aurora-blob {
+    position: absolute;
+    border-radius: 50%;
+    will-change: transform;
+    animation: tf-drift 22s ease-in-out infinite alternate;
+  }
+
+  /* Dot grid that fades toward the edges. */
+  .tf-grid {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background-image: radial-gradient(oklch(0.192 0.006 286 / 0.09) 1px, transparent 1px);
+    background-size: 26px 26px;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, #000 30%, transparent 78%);
+  }
+
+  /* Film grain, keeps the flat cream from banding. */
+  .tf-grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    pointer-events: none;
+    opacity: 0.035;
+    background-image: url("/noise.svg");
+  }
+
+  /*
+   * Cards track the pointer in their OWN coordinate space (--cx/--cy),
+   * so the highlight sits under the cursor rather than following the page.
+   */
+  .tf-card {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    border-radius: var(--radius-2xl);
+    border: 1px solid var(--color-border);
+    background: var(--color-card);
+    transition:
+      transform 450ms cubic-bezier(0.22, 1, 0.36, 1),
+      border-color 450ms ease,
+      box-shadow 450ms ease;
+  }
+
+  .tf-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    opacity: 0;
+    transition: opacity 450ms ease;
+    background: radial-gradient(
+      340px circle at var(--cx, 50%) var(--cy, 50%),
+      oklch(0.906 0.184 122 / 0.34),
+      transparent 70%
+    );
+  }
+
+  /* Border sheen: a gradient ring revealed only where the cursor is. */
+  .tf-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    border-radius: inherit;
+    padding: 1px;
+    opacity: 0;
+    transition: opacity 450ms ease;
+    background: radial-gradient(
+      260px circle at var(--cx, 50%) var(--cy, 50%),
+      oklch(0.822 0.176 124 / 0.9),
+      transparent 70%
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+
+  .tf-card:hover {
+    transform: translateY(-3px);
+    border-color: oklch(0.192 0.006 286 / 0.2);
+    box-shadow: 0 22px 48px -28px oklch(0.192 0.006 286 / 0.45);
+  }
+
+  .tf-card:hover::before,
+  .tf-card:hover::after {
+    opacity: 1;
+  }
+
+  /* Lime chip, the "@" tag from the brand lockup. */
+  .tf-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    border: 1px solid oklch(0.192 0.006 286 / 0.14);
+    background: oklch(0.906 0.184 122 / 0.22);
+    padding: 0.3rem 0.8rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Bracketed word from the hero lockup: Send [real value] like a message. */
+  .tf-bracket {
+    position: relative;
+    display: inline-block;
+    padding: 0 0.14em;
+    /* The brackets are absolutely positioned outside the box, so they'd sit on
+       top of the surrounding word-spaces without this breathing room. */
+    margin: 0 0.42em;
+  }
+
+  .tf-bracket::before,
+  .tf-bracket::after {
+    position: absolute;
+    top: -0.02em;
+    font-weight: 300;
+    color: var(--ink-soft);
+  }
+
+  .tf-bracket::before {
+    content: "[";
+    left: -0.3em;
+  }
+
+  .tf-bracket::after {
+    content: "]";
+    right: -0.3em;
+  }
+
+  .tf-underline {
+    background-image: linear-gradient(transparent 62%, oklch(0.906 0.184 122 / 0.55) 62%);
+    background-size: 100% 100%;
+  }
+
+  .tf-numeric {
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.03em;
+  }
+
+  .tf-rise {
+    animation: tf-rise 800ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  }
+
+  .tf-marquee {
+    animation: tf-marquee 32s linear infinite;
+  }
+
+  /* Blinking caret for the self-typing demo input. */
+  .tf-caret {
+    display: inline-block;
+    width: 2px;
+    height: 1.1em;
+    margin-left: 1px;
+    vertical-align: text-bottom;
+    background: var(--ink);
+    animation: tf-caret 1.05s steps(1) infinite;
+  }
+
+  .tf-shimmer {
+    animation: tf-shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes tf-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  100% {
+    transform: translate3d(6%, -8%, 0) scale(1.18);
+  }
+}
+
+@keyframes tf-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes tf-caret {
+  0%,
+  45% {
+    opacity: 1;
+  }
+  55%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes tf-shimmer {
+  0% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes tf-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .tf-aurora-blob,
+  .tf-rise,
+  .tf-marquee {
+    animation: none !important;
+  }
+
+  .tf-spotlight {
+    display: none;
+  }
+
+  .tf-card:hover {
+    transform: none;
   }
 }

@@ -8,8 +8,11 @@
     chainId: '0x1237', // 4663
     chainName: 'Robinhood Chain',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-    rpcUrls: ['https://rpc.chain.robinhood.com/rpc'],
-    blockExplorerUrls: ['https://explorer.chain.robinhood.com']
+    // wallet_addEthereumChain makes the wallet probe these, so they must be
+    // live: the old rpc.chain.robinhood.com host has no TLS cert for that name
+    // and fails the handshake, which made "add network" silently reject.
+    rpcUrls: ['https://rpc.mainnet.chain.robinhood.com', 'https://robinhood-rpc.publicnode.com'],
+    blockExplorerUrls: ['https://robinhoodchain.blockscout.com']
   };
 
   var BASE = (function () {

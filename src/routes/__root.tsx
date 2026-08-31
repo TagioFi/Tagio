@@ -9,8 +9,14 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { RainbowKitProvider, lightTheme } from "@rainbow-me/rainbowkit";
+import rainbowCss from "@rainbow-me/rainbowkit/styles.css?url";
+import { WagmiProvider } from "wagmi";
+
+import { Toaster } from "../components/ui/sonner";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { wagmiConfig } from "../lib/wagmi";
 
 function NotFoundComponent() {
   return (
@@ -77,21 +83,37 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "TagioFi · Send real value like a message" },
+      {
+        name: "description",
+        content:
+          "Your tag knows what you want to be paid in. Set your receive-mix once and every payment settles into the assets you actually keep, on Robinhood Chain.",
+      },
+      { name: "author", content: "TagioFi" },
+      { property: "og:title", content: "TagioFi · Send real value like a message" },
+      {
+        property: "og:description",
+        content:
+          "Non-custodial receive-side RWA settlement. Any inbound token, atomically converted into your elected portfolio.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:site", content: "@TagioPay" },
+      { name: "theme-color", content: "#f4eee2" },
     ],
     links: [
       {
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "stylesheet", href: rainbowCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=JetBrains+Mono:wght@400;600&display=swap",
+      },
     ],
   }),
   shellComponent: RootShell,
@@ -118,9 +140,35 @@ function RootComponent() {
   const { queryClient } = Route.useRouteContext();
 
   return (
-    <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
-    </QueryClientProvider>
+    <WagmiProvider config={wagmiConfig}>
+      <QueryClientProvider client={queryClient}>
+        <RainbowKitProvider
+          theme={lightTheme({
+            accentColor: "#c8f24e",
+            accentColorForeground: "#17171a",
+            borderRadius: "large",
+            fontStack: "system",
+          })}
+        >
+          {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+          <Outlet />
+          <Toaster
+            position="bottom-right"
+            closeButton
+            toastOptions={{
+              classNames: {
+                toast:
+                  "group toast rounded-2xl border border-ink/12 bg-card text-ink shadow-[0_18px_44px_-24px_rgba(23,23,26,0.5)]",
+                description: "text-ink/55",
+                actionButton: "rounded-full bg-ink text-cream",
+                cancelButton: "rounded-full bg-ink/8 text-ink/60",
+                error: "border-destructive/25",
+                success: "border-lime-deep/40",
+              },
+            }}
+          />
+        </RainbowKitProvider>
+      </QueryClientProvider>
+    </WagmiProvider>
   );
 }
