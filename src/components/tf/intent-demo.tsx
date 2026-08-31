@@ -51,7 +51,7 @@ const DEMOS: Demo[] = [
     },
   },
   {
-    text: "@TagioPayBot set my mix to 70 nvdar 30 usdg",
+    text: "@TagioPayBot set my mix to 70 nvda 30 usdg",
     intent: {
       action: "election",
       target: null,
@@ -60,7 +60,7 @@ const DEMOS: Demo[] = [
       token: null,
       memo: null,
       elections: [
-        { symbol: "NVDAR", basisPoints: 7000 },
+        { symbol: "NVDA", basisPoints: 7000 },
         { symbol: "USDG", basisPoints: 3000 },
       ],
       confidence: 0.98,

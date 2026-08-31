@@ -46,12 +46,12 @@ export const USDG: V2TokenInfo = {
 export const FEATURED_ROBINHOOD_ASSETS: V2TokenInfo[] = [
   {
     symbol: "SPCX",
-    name: "SPDR S&P 500 ETF Token",
-    underlyingTicker: "SPY",
+    name: "SpaceX (Space Exploration Technologies Corp.)",
+    underlyingTicker: "SPCX",
     address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
     decimals: 18,
-    iconUrl: "https://cryptologos.cc/logos/spdr-s-and-p-500-etf-trust-logo.png",
-    assetType: "etf",
+    iconUrl: "https://cdn.prod.website-files.com/655f3efc4be468487052e35a/68497d354d7140b01657a793_Ticker%3DSPCX.svg",
+    assetType: "equity",
   },
   {
     symbol: "AAPL",
@@ -135,8 +135,7 @@ export const ALL_ROBINHOOD_ASSETS: V2TokenInfo[] = [
 ];
 
 const ALIASES: Record<string, string> = {
-  SPY: "SPCX",
-  SPYR: "SPCX",
+  SPACEX: "SPCX",
   AAPLR: "AAPL",
   TSLAR: "TSLA",
   NVDAR: "NVDA",

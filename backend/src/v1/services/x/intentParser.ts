@@ -82,7 +82,7 @@ Sometimes the message includes a "PRIOR TURN" block -- the slots already gathere
 // queue FIFO and wait for a slot in a rolling 60s window rather than
 // erroring on a burst (e.g. a full 20-mention poll batch all needing a
 // Groq call in the same tick).
-const MODEL = "llama-3.3-70b-versatile";
+const getModel = () => config.groq.model || "qwen/qwen3.8-27b";
 const RATE_LIMIT_PER_MIN = 30;
 const WINDOW_MS = 60_000;
 
@@ -130,7 +130,7 @@ function buildUserContent(message: string, prior?: PriorIntentContext): string {
 export async function parseIntent(message: string, prior?: PriorIntentContext): Promise<ParsedIntent> {
   const response = await scheduleGroqCall(() =>
     getClient().chat.completions.create({
-      model: MODEL,
+      model: getModel(),
       messages: [
         { role: "system", content: SYSTEM_INSTRUCTION },
         { role: "user", content: buildUserContent(message, prior) },

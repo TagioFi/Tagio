@@ -57,3 +57,8 @@ contracts/out/
 contracts/cache/
 contracts/lib/
 contracts/broadcast/
+
+# Technical documentation & notes
+technical-docs/
+for-skipp*.md
+*frontend-integration*.md

@@ -1,11 +1,13 @@
 import { config } from "../../config";
-import { parseUnits } from "viem";
+import { encodeFunctionData, erc20Abi, parseUnits } from "viem";
 import {
   ROBINHOOD_CHAIN_ID,
   V2TokenInfo,
   USDG,
   resolveV2Token,
 } from "../lib/robinhoodTokens";
+import { planSwap } from "../../lib/swapExecution";
+import { quoteSwap } from "../../lib/uniswap";
 
 export const PROTOCOL_FEE_BPS = 15; // 0.15% (15 bps) app fee
 
@@ -108,9 +110,45 @@ export async function fetchRelayRobinhoodQuote(params: {
 
 export async function quoteSingleSwap(params: SingleSwapQuoteParams): Promise<SingleSwapQuoteResult> {
   const inBaseUnits = parseUnits(params.amountIn.toString(), params.fromToken.decimals).toString();
+  const recipient = (params.recipientWallet || params.userWallet) as `0x${string}`;
 
-  // If same token, return 1:1 fee-free path
+  // 1. Same-Asset Settlement: Generate directly executable transfer step
   if (params.fromToken.address.toLowerCase() === params.toToken.address.toLowerCase()) {
+    const isNative = params.fromToken.isNative || params.fromToken.address === "0x0000000000000000000000000000000000000000";
+    
+    const itemData = isNative
+      ? {
+          to: recipient,
+          data: "0x" as `0x${string}`,
+          value: inBaseUnits,
+          chainId: ROBINHOOD_CHAIN_ID,
+        }
+      : {
+          to: params.fromToken.address,
+          data: encodeFunctionData({
+            abi: erc20Abi,
+            functionName: "transfer",
+            args: [recipient, BigInt(inBaseUnits)],
+          }),
+          value: "0",
+          chainId: ROBINHOOD_CHAIN_ID,
+        };
+
+    const steps = [
+      {
+        id: "transfer",
+        action: `Transfer ${params.fromToken.symbol}`,
+        description: `Direct transfer of ${params.amountIn} ${params.fromToken.symbol}`,
+        kind: "transaction",
+        items: [
+          {
+            status: "not_started",
+            data: itemData,
+          },
+        ],
+      },
+    ];
+
     return {
       fromToken: params.fromToken,
       toToken: params.toToken,
@@ -121,35 +159,102 @@ export async function quoteSingleSwap(params: SingleSwapQuoteParams): Promise<Si
       rate: "1.0",
       priceImpactPct: 0,
       timeEstimate: 0,
+      steps,
     };
   }
 
-  const relayQuote = await fetchRelayRobinhoodQuote({
-    user: params.userWallet,
-    originCurrency: params.fromToken.address,
-    destinationCurrency: params.toToken.address,
-    amount: inBaseUnits,
-    recipient: params.recipientWallet || params.userWallet,
-  });
+  // 2. Try Relay Cross-Chain / Same-Chain Solver First
+  try {
+    const relayQuote = await fetchRelayRobinhoodQuote({
+      user: params.userWallet,
+      originCurrency: params.fromToken.address,
+      destinationCurrency: params.toToken.address,
+      amount: inBaseUnits,
+      recipient,
+    });
 
-  const outAmount = relayQuote.details?.currencyOut?.amount || "0";
-  const outFormatted = relayQuote.details?.currencyOut?.amountFormatted || "0";
-  const priceImpact = parseFloat(relayQuote.details?.totalImpact?.percent || "0");
+    const outAmount = relayQuote.details?.currencyOut?.amount || "0";
+    const outFormatted = relayQuote.details?.currencyOut?.amountFormatted || "0";
+    const priceImpact = parseFloat(relayQuote.details?.totalImpact?.percent || "0");
 
-  return {
-    fromToken: params.fromToken,
-    toToken: params.toToken,
-    amountIn: inBaseUnits,
-    amountInFormatted: params.amountIn.toString(),
-    amountOut: outAmount,
-    amountOutFormatted: outFormatted,
-    rate: relayQuote.details?.rate || (parseFloat(outFormatted) / params.amountIn).toFixed(6),
-    priceImpactPct: priceImpact,
-    timeEstimate: relayQuote.details?.timeEstimate || 2,
-    requestId: relayQuote.requestId,
-    steps: relayQuote.steps,
-    rawRelayQuote: relayQuote,
-  };
+    return {
+      fromToken: params.fromToken,
+      toToken: params.toToken,
+      amountIn: inBaseUnits,
+      amountInFormatted: params.amountIn.toString(),
+      amountOut: outAmount,
+      amountOutFormatted: outFormatted,
+      rate: relayQuote.details?.rate || (parseFloat(outFormatted) / params.amountIn).toFixed(6),
+      priceImpactPct: priceImpact,
+      timeEstimate: relayQuote.details?.timeEstimate || 2,
+      requestId: relayQuote.requestId,
+      steps: relayQuote.steps,
+      rawRelayQuote: relayQuote,
+    };
+  } catch (relayErr: any) {
+    // 3. Fallback to Robinhood Chain Native Uniswap V4 / V3 Router for Stock Tokens
+    try {
+      const plan = await planSwap(params.fromToken.symbol, params.toToken.symbol, params.amountIn, recipient);
+      if (plan) {
+        const steps: any[] = [];
+        
+        // Add token approvals if needed
+        if (plan.approvals && plan.approvals.length > 0) {
+          steps.push({
+            id: "approve",
+            action: `Approve ${params.fromToken.symbol}`,
+            description: `Approve ${params.fromToken.symbol} for swap execution`,
+            kind: "transaction",
+            items: plan.approvals.map((tx) => ({
+              status: "not_started",
+              data: {
+                to: tx.to,
+                data: tx.data,
+                value: tx.value,
+                chainId: ROBINHOOD_CHAIN_ID,
+              },
+            })),
+          });
+        }
+
+        // Add the swap execution step
+        steps.push({
+          id: "swap",
+          action: `Swap ${params.fromToken.symbol} for ${params.toToken.symbol}`,
+          description: `Execute swap via Robinhood Uniswap (${plan.quote.route})`,
+          kind: "transaction",
+          items: [
+            {
+              status: "not_started",
+              data: {
+                to: plan.swap.to,
+                data: plan.swap.data,
+                value: plan.swap.value,
+                chainId: ROBINHOOD_CHAIN_ID,
+              },
+            },
+          ],
+        });
+
+        return {
+          fromToken: params.fromToken,
+          toToken: params.toToken,
+          amountIn: inBaseUnits,
+          amountInFormatted: params.amountIn.toString(),
+          amountOut: plan.quote.amountOutWei.toString(),
+          amountOutFormatted: plan.quote.amountOut,
+          rate: (parseFloat(plan.quote.amountOut) / params.amountIn).toFixed(6),
+          priceImpactPct: plan.quote.priceImpactPct,
+          timeEstimate: 2,
+          steps,
+        };
+      }
+    } catch (uniswapErr) {
+      // Re-throw if both Relay and Uniswap fail
+    }
+
+    throw new Error(`Swap route unavailable for ${params.fromToken.symbol} -> ${params.toToken.symbol}: ${relayErr.message}`);
+  }
 }
 
 export async function quotePortfolioSettlement(params: {
@@ -194,7 +299,7 @@ export async function quotePortfolioSettlement(params: {
         });
       }
     } catch (err) {
-      // If a specific RWA leg fails liquidity on Relay, safe-settle that leg in USDG
+      // If a specific RWA leg has no route, safe-settle that leg in USDG
       isFallbackUsdg = true;
       legQuote = await quoteSingleSwap({
         userWallet: params.userWallet,

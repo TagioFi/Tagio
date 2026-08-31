@@ -121,7 +121,7 @@ export async function parseV2BotIntent(text: string): Promise<V2ParsedBotIntent>
 
   try {
     const res = await getGroqClient().chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: config.groq.model || "qwen/qwen3.8-27b",
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: text },

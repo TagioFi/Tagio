@@ -94,9 +94,9 @@ function Hero() {
  */
 function SplitPanel() {
   const legs = [
-    { symbol: "SPYR", basisPoints: 6000 },
+    { symbol: "SPCX", basisPoints: 6000 },
     { symbol: "USDG", basisPoints: 3000 },
-    { symbol: "GLDR", basisPoints: 1000 },
+    { symbol: "NVDA", basisPoints: 1000 },
   ];
 
   return (
@@ -132,7 +132,7 @@ function SplitPanel() {
               </p>
               <div className="mt-5 h-px w-full bg-ink/12" />
               <p className="mt-4 text-xs font-bold uppercase tracking-[0.16em] text-ink/40">
-                SPYR · USDG · GLDR
+                SPCX · USDG · NVDA
               </p>
               <AllocationBar legs={legs} className="mt-6" />
               <p className="mt-6 max-w-xs text-sm leading-relaxed text-ink/55">
