@@ -161,28 +161,9 @@ forge test -vvv
 | **Network** | Robinhood Chain Mainnet |
 | **Chain ID** | `4663` |
 | **Currency** | `ETH` |
-| **Explorer** | [explorer.robinhood.com](https://explorer.robinhood.com) |
+| **Explorer** | [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com) |
 | **Native Stablecoin** | `USDG` (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) |
 | **Supported RWA Equities** | `SPCX`, `AAPL`, `NVDA`, `TSLA`, `GOOGL`, `AMZN`, `MSFT`, `META`, `COIN` |
-
----
-
-## 🔄 Dual-Repository Synchronization
-
-TagioFi operates a synchronized multi-remote setup:
-* **Private Production Repo** (`notadeveloper7/tagiopay`): Connected to deployment pipelines and Lovable sync.
-* **Public Open-Source Repo** (`TagioFi/Tagio`): Public release repository with all commits cleanly attributed to `TagioFi <tagiofi@outlook.com>`.
-
-```bash
-# Push to production repository
-bun run push:origin
-
-# Push to public open-source repository (with automated author rewrite)
-bun run push:public
-
-# Push to both repositories simultaneously
-bun run push:all
-```
 
 ---
 
