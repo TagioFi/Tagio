@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as RoadmapRouteImport } from './routes/roadmap'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as PayTargetRouteImport } from './routes/pay.$target'
@@ -23,6 +24,11 @@ const IndexRoute = IndexRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoadmapRoute = RoadmapRouteImport.update({
@@ -44,6 +50,7 @@ const PayTargetRoute = PayTargetRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/dashboard': typeof DashboardRoute
   '/roadmap': typeof RoadmapRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/pay/$target': typeof PayTargetRoute
@@ -51,6 +58,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/dashboard': typeof DashboardRoute
   '/roadmap': typeof RoadmapRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/pay/$target': typeof PayTargetRoute
@@ -59,21 +67,32 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/app': typeof AppRoute
+  '/dashboard': typeof DashboardRoute
   '/roadmap': typeof RoadmapRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/pay/$target': typeof PayTargetRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/app' | '/roadmap' | '/auth/callback' | '/pay/$target'
+  fullPaths:
+    '/' | '/app' | '/dashboard' | '/roadmap' | '/auth/callback' | '/pay/$target'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/app' | '/roadmap' | '/auth/callback' | '/pay/$target'
-  id: '__root__' | '/' | '/app' | '/roadmap' | '/auth/callback' | '/pay/$target'
+  to:
+    '/' | '/app' | '/dashboard' | '/roadmap' | '/auth/callback' | '/pay/$target'
+  id:
+    | '__root__'
+    | '/'
+    | '/app'
+    | '/dashboard'
+    | '/roadmap'
+    | '/auth/callback'
+    | '/pay/$target'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
+  DashboardRoute: typeof DashboardRoute
   RoadmapRoute: typeof RoadmapRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   PayTargetRoute: typeof PayTargetRoute
@@ -93,6 +112,13 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/roadmap': {
@@ -122,6 +148,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
+  DashboardRoute: DashboardRoute,
   RoadmapRoute: RoadmapRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   PayTargetRoute: PayTargetRoute,
