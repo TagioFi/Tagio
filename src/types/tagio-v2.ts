@@ -327,3 +327,39 @@ export interface V2AuthMeResponse {
   isLinked: boolean;
   handles: Array<{ handle: string; display_name: string | null }>;
 }
+
+/**
+ * Row shape behind `GET /v2/pending/tx/:id` (the `pending_transactions` table).
+ *
+ * A bot-prepared swap stores the pair as `token` → `target_value` with
+ * `target_type = "swap"`; payment mentions put a handle or address in
+ * `target_value` instead, which is why the trade terminal only pre-fills when
+ * the row is a swap.
+ */
+export interface V2PendingTxRow {
+  id: number;
+  /** The wallet-scoped listing aliases `id` to this. */
+  request_id?: number | string | null;
+  source_ref?: string | null;
+  requested_by_x_user_id?: string | null;
+  target_type?: string | null;
+  target_value?: string | null;
+  resolved_to_wallet?: string | null;
+  requested_by_wallet?: string | null;
+  token?: string | null;
+  amount?: string | null;
+  amount_base_units?: string | null;
+  kind?: string | null;
+  status?: string | null;
+  tweet_url?: string | null;
+  quote_route?: string | null;
+  price_impact_pct?: number | string | null;
+  created_at?: string | null;
+  expires_at?: string | null;
+}
+
+export interface V2PendingTxResponse {
+  transaction: V2PendingTxRow;
+  handleDetails: V2HandleDetails | null;
+  isExpired: boolean;
+}
