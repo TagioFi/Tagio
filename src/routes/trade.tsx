@@ -327,11 +327,20 @@ function TradePage() {
   const [amountIn, setAmountIn] = useState("50");
   const [slippage, setSlippage] = useState<number>(1.0);
 
+  /* ── Quote ── */
+
+  const amountNumber = Number(amountIn);
+  const amountValid = Number.isFinite(amountNumber) && amountNumber > 0;
+  const samePair = fromToken.symbol === toToken.symbol;
+
+  const quoteQuery = useV2SingleQuote({
     fromToken: fromToken.symbol,
     toToken: toToken.symbol,
     amount: amountIn,
     userWallet: address,
+    slippageBps: Math.round(slippage * 100),
   });
+  const quote = quoteQuery.data;
 
   /* ── Allowance ── */
 
@@ -477,7 +486,8 @@ function TradePage() {
     }
   };
 
-  const isBusy = isApproving || isSwapping || isWaitingReceipt;
+  const priceImpact = quote?.priceImpactPct ?? 0;
+  const sameAsset = fromToken.symbol === toToken.symbol;
 
   return (
     <PageShell>
@@ -521,23 +531,24 @@ function TradePage() {
         {/* Main Swap Terminal Card */}
         <div className="mt-8">
           <SpotlightCard className="p-6 sm:p-8">
-            <div className="flex items-center justify-between pb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
               <h2 className="text-lg font-bold tracking-tight text-ink">Swap Terminal</h2>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-medium text-ink/40">Slippage:</span>
-                {[0.5, 1.0, 2.5].map((s) => (
+                {SLIPPAGE_PRESETS.map((preset) => (
                   <button
-                    key={s}
+                    key={preset}
                     type="button"
-                    onClick={() => setSlippage(s)}
+                    onClick={() => setSlippage(preset)}
+                    aria-pressed={slippage === preset}
                     className={cn(
                       "rounded-full px-2.5 py-0.5 text-xs font-bold transition-all",
-                      slippage === s
+                      slippage === preset
                         ? "bg-ink text-cream"
                         : "bg-cream-deep text-ink/60 hover:text-ink",
                     )}
                   >
-                    {s}%
+                    {preset}%
                   </button>
                 ))}
               </div>
@@ -643,44 +654,61 @@ function TradePage() {
               </div>
             </div>
 
-            {/* Quote Details Breakdown */}
-            {quote && (
+            {quoteQuery.isError ? (
+              <p className="mt-3 rounded-xl border border-destructive/25 bg-destructive/5 px-4 py-3 text-xs font-semibold text-destructive">
+                {friendlyError(quoteQuery.error)}
+              </p>
+            ) : null}
+
+            {/* Quote breakdown */}
+            {quote ? (
               <div className="mt-5 space-y-2 rounded-xl border border-ink/8 bg-cream-deep/40 p-4 text-xs font-medium text-ink/70">
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span>Exchange Rate</span>
-                  <span className="font-mono font-bold text-ink">
-                    1 {fromToken.symbol} ≈ {parseFloat(quote.rate || "1").toFixed(4)} {toToken.symbol}
+                  <span className="truncate font-mono font-bold text-ink">
+                    1 {fromToken.symbol} ≈ {formatOut(quote.rate)} {toToken.symbol}
                   </span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span>Price Impact</span>
                   <span
                     className={cn(
                       "font-mono font-bold",
-                      quote.priceImpactPct > 2
+                      priceImpact > 2
                         ? "text-rose-600"
-                        : quote.priceImpactPct > 0.5
+                        : priceImpact > 0.5
                           ? "text-amber-600"
                           : "text-emerald-600",
                     )}
                   >
-                    {quote.priceImpactPct > 0 ? `${quote.priceImpactPct.toFixed(2)}%` : "< 0.05%"}
+                    {priceImpact >= 0.01 ? `${priceImpact.toFixed(2)}%` : "< 0.01%"}
+                    {priceImpact > 2 ? " ⚠" : ""}
                   </span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
+                  <span>Max Slippage</span>
+                  <span className="font-mono font-bold text-ink">{slippage.toFixed(2)}%</span>
+                </div>
+                <div className="flex justify-between gap-4">
                   <span>Protocol Settlement Fee</span>
                   <span className="font-bold text-ink">
-                    {fromToken.symbol === toToken.symbol ? "0.00% (Free Direct)" : "0.15% (Bounded)"}
+                    {sameAsset ? "0.00% (Free Direct)" : "0.15% (Bounded)"}
                   </span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span>Execution Routing</span>
                   <span className="font-bold text-emerald-700">Atomic Best-Route Settlement</span>
                 </div>
               </div>
-            )}
+            ) : null}
 
-            {/* Execution Buttons */}
+            {priceImpact > 2 ? (
+              <p className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/5 px-4 py-3 text-xs font-semibold text-rose-700">
+                Price impact is above 2% — this pool is thin for that size. Consider trading a
+                smaller amount.
+              </p>
+            ) : null}
+
             <div className="mt-6">
               {!isConnected ? (
                 <div className="text-center">
