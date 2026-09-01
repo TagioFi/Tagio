@@ -365,13 +365,7 @@ function TradePage() {
       <section className="relative mx-auto max-w-4xl px-6 pt-32 pb-16">
         {/* Header */}
         <div className="text-center">
-          <div className="flex justify-center">
-            <span className="tf-chip">
-              <span className="size-1.5 rounded-full bg-lime-deep" aria-hidden="true" />
-              Robinhood Chain (4663) · Verified Equities &amp; USDG
-            </span>
-          </div>
-          <h1 className="mt-6 text-3xl font-extrabold tracking-tight text-ink sm:text-5xl">
+          <h1 className="text-3xl font-extrabold tracking-tight text-ink sm:text-5xl">
             Trade RWA Stocks.
           </h1>
           <p className="mx-auto mt-3 max-w-lg text-balance text-sm leading-relaxed text-ink/65 sm:text-base">
@@ -559,8 +553,8 @@ function TradePage() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Execution Guarantee</span>
-                  <span className="font-bold text-emerald-700">Atomic Uniswap V3 on Chain 4663</span>
+                  <span>Execution Routing</span>
+                  <span className="font-bold text-emerald-700">Atomic Best-Route Settlement</span>
                 </div>
               </div>
             )}
