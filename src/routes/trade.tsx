@@ -321,11 +321,50 @@ function TradePage() {
   const tokens = useTradeTokens();
   const { balances, refetch: refetchBalances } = useTokenBalances(tokens, address);
 
+  const pendingQuery = useV2PendingTransaction(search.id);
+  const pendingTx = pendingQuery.data?.transaction;
+  const pendingIsSwap =
+    pendingTx?.target_type === "swap" ||
+    pendingTx?.kind === "swap" ||
+    (isAllowedSymbol(pendingTx?.token) && isAllowedSymbol(pendingTx?.target_value));
 
   const [fromSymbol, setFromSymbol] = useState("USDG");
   const [toSymbol, setToSymbol] = useState("SPCX");
   const [amountIn, setAmountIn] = useState("50");
   const [slippage, setSlippage] = useState<number>(1.0);
+
+  // Pre-fill from a bot-prepared swap, else from explicit query params. Both
+  // are untrusted input, so nothing outside the allowlist is ever applied.
+  const prefilled = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${search.id ?? ""}|${search.from ?? ""}|${search.to ?? ""}|${search.amount ?? ""}|${pendingTx?.id ?? ""}`;
+    if (prefilled.current === key) return;
+
+    const from = pendingIsSwap ? pendingTx?.token : search.from;
+    const to = pendingIsSwap ? pendingTx?.target_value : search.to;
+    const amount = pendingIsSwap ? pendingTx?.amount : search.amount;
+
+    // Wait for the pending row before deciding, when one was asked for.
+    if (search.id && pendingQuery.isLoading) return;
+    prefilled.current = key;
+
+    if (isAllowedSymbol(from)) setFromSymbol(String(from).toUpperCase());
+    if (isAllowedSymbol(to)) setToSymbol(String(to).toUpperCase());
+    if (amount && Number.isFinite(Number(amount)) && Number(amount) > 0)
+      setAmountIn(String(amount));
+  }, [search, pendingTx, pendingIsSwap, pendingQuery.isLoading]);
+
+  const fromToken = useMemo(
+    () => tokens.find((token) => token.symbol === fromSymbol) ?? tokens[0]!,
+    [tokens, fromSymbol],
+  );
+  const toToken = useMemo(
+    () => tokens.find((token) => token.symbol === toSymbol) ?? tokens[3]!,
+    [tokens, toSymbol],
+  );
+
+  const fromBalance = balances[fromToken.symbol];
+  const toBalance = balances[toToken.symbol];
 
   /* ── Quote ── */
 
@@ -520,30 +559,19 @@ function TradePage() {
           </p>
         </div>
 
-        {/* Pending Twitter Trade Banner */}
-        {pendingTxData?.transaction && (
-          <SpotlightCard className="mt-8 border-lime/50 bg-lime/10 p-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="flex items-center gap-3">
-                <TagioMark className="size-7 text-lime-deep" />
-                <div>
-                  <span className="text-xs font-bold uppercase tracking-wider text-lime-deep">
-                    Pending Trade from Twitter (@TagioPayBot)
-                  </span>
-                  <div className="text-sm font-semibold text-ink">
-                    Swap {pendingTxData.transaction.amount} {pendingTxData.transaction.token} →{" "}
-                    {pendingTxData.transaction.target_value}
-                  </div>
-                </div>
-              </div>
-              <span className="rounded-full bg-cream px-3 py-1 text-xs font-bold text-ink/70">
-                Ready to Sign
-              </span>
-            </div>
-          </SpotlightCard>
-        )}
+        {search.id ? (
+          <PendingTradeBanner
+            isLoading={pendingQuery.isLoading}
+            error={pendingQuery.isError ? friendlyError(pendingQuery.error) : null}
+            isExpired={pendingQuery.data?.isExpired ?? false}
+            isSwap={Boolean(pendingIsSwap)}
+            amount={pendingTx?.amount ?? null}
+            from={pendingTx?.token ?? null}
+            to={pendingTx?.target_value ?? null}
+            tweetUrl={pendingTx?.tweet_url ?? null}
+          />
+        ) : null}
 
-        {/* Main Swap Terminal Card */}
         <div className="mt-8">
           <SpotlightCard className="p-6 sm:p-8">
             <div className="flex flex-wrap items-center justify-between gap-3 pb-4">
@@ -875,6 +903,85 @@ function TradePage() {
         </div>
       </section>
     </PageShell>
+  );
+}
+
+/* ── Pending trade banner ───────────────────────────────────────────────── */
+
+function PendingTradeBanner({
+  isLoading,
+  error,
+  isExpired,
+  isSwap,
+  amount,
+  from,
+  to,
+  tweetUrl,
+}: {
+  isLoading: boolean;
+  error: string | null;
+  isExpired: boolean;
+  isSwap: boolean;
+  amount: string | null;
+  from: string | null;
+  to: string | null;
+  tweetUrl: string | null;
+}) {
+  return (
+    <SpotlightCard
+      className={cn(
+        "mt-8 p-5",
+        error || isExpired ? "border-ink/15 bg-cream-deep/40" : "border-lime/50 bg-lime/10",
+      )}
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <TagioMark
+            className={cn("size-7", error || isExpired ? "text-ink/40" : "text-lime-deep")}
+          />
+          <div>
+            <span
+              className={cn(
+                "text-xs font-bold uppercase tracking-wider",
+                error || isExpired ? "text-ink/45" : "text-lime-deep",
+              )}
+            >
+              Pending Trade from Twitter (@TagioPayBot)
+            </span>
+            <div className="text-sm font-semibold text-ink">
+              {isLoading
+                ? "Loading the request…"
+                : error
+                  ? error
+                  : isSwap
+                    ? `Swap ${amount ?? ""} ${from ?? ""} → ${to ?? ""}`
+                    : "That request isn't a swap — open it from the pay link instead."}
+            </div>
+            {tweetUrl && !isLoading && !error ? (
+              <a
+                href={tweetUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold text-ink/50 underline-offset-2 hover:underline"
+              >
+                View the original mention
+              </a>
+            ) : null}
+          </div>
+        </div>
+
+        {!isLoading && !error ? (
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1 text-xs font-bold",
+              isExpired ? "bg-ink/10 text-ink/50" : "bg-cream text-ink/70",
+            )}
+          >
+            {isExpired ? "Expired — re-quoted live" : "Ready to Sign"}
+          </span>
+        ) : null}
+      </div>
+    </SpotlightCard>
   );
 }
 
