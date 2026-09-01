@@ -146,24 +146,38 @@ export function useUpdateV2Elections() {
 
 // ── C. Multi-leg routing & settlement ───────────────────────────────────────
 
+/**
+ * Quotes one pair. `slippageBps` rides along because the engine bounds the
+ * swap's `amountOutMinimum` with it — the quote and the calldata it returns
+ * are only consistent if the tolerance the user picked is the one quoted.
+ */
 export function useV2SingleQuote(params: {
   fromToken?: string | undefined;
   toToken?: string | undefined;
   amount: number | string;
   userWallet?: string | undefined;
+  slippageBps?: number | undefined;
 }) {
   const amount = Number(params.amount);
   return useQuery({
-    queryKey: ["v2-quote", params.fromToken, params.toToken, amount],
+    queryKey: ["v2-quote", params.fromToken, params.toToken, amount, params.slippageBps],
     queryFn: () =>
       api.post<SingleSwapQuoteResult>("/v2/settle/quote", {
         fromSymbolOrAddress: params.fromToken,
         toSymbolOrAddress: params.toToken,
         amountIn: amount,
         userWallet: params.userWallet,
+        ...(params.slippageBps === undefined ? {} : { slippageBps: params.slippageBps }),
       }),
-    enabled: Boolean(params.fromToken && params.toToken && amount > 0),
+    enabled: Boolean(
+      params.fromToken &&
+      params.toToken &&
+      params.fromToken.toUpperCase() !== params.toToken.toUpperCase() &&
+      Number.isFinite(amount) &&
+      amount > 0,
+    ),
     refetchInterval: 15_000,
+    retry: false,
   });
 }
 
