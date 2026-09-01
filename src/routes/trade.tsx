@@ -41,10 +41,10 @@ import type { V2QuoteStep, V2TokenInfo } from "@/types/tagio-v2";
  * redirect. Leaving the parsed type alone round-trips cleanly.
  */
 export interface TradeSearch {
-  id?: string | undefined;
+  id?: string | number | undefined;
   from?: string | undefined;
   to?: string | undefined;
-  amount?: string | undefined;
+  amount?: string | number | undefined;
 }
 
 export const Route = createFileRoute("/trade")({
@@ -58,12 +58,17 @@ export const Route = createFileRoute("/trade")({
       },
     ],
   }),
-  validateSearch: (search: Record<string, unknown>): TradeSearch => ({
-    id: search["id"] ? String(search["id"]) : undefined,
-    from: search["from"] ? String(search["from"]) : undefined,
-    to: search["to"] ? String(search["to"]) : undefined,
-    amount: search["amount"] ? String(search["amount"]) : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): TradeSearch => {
+    const scalar = (value: unknown): string | number | undefined =>
+      typeof value === "string" || typeof value === "number" ? value : undefined;
+
+    return {
+      id: scalar(search["id"]),
+      from: search["from"] ? String(search["from"]) : undefined,
+      to: search["to"] ? String(search["to"]) : undefined,
+      amount: scalar(search["amount"]),
+    };
+  },
   component: TradePage,
 });
 
