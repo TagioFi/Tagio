@@ -8,6 +8,7 @@ backend/.secrets/
 backend/cockpit/.env
 backend/cockpit/wallets.json
 
+
 # Logs
 logs
 *.log
