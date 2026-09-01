@@ -1,8 +1,20 @@
+/**
+ * RWA trading terminal — non-custodial swaps between the verified Robinhood
+ * Chain assets (tokenized equities, USDG, ETH/WETH).
+ *
+ * The backend quotes Uniswap V3 and V4 in parallel and hands back an ordered
+ * `steps` array. A cross-asset quote arrives as `approve` → `swap`, so the
+ * router that needs the allowance is the **swap** step's `to`, never the first
+ * step's (that one is the token contract). Everything the wallet signs comes
+ * straight from that payload; the UI only decides *when* to send it.
+ */
+
 import { createFileRoute, Link, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   useAccount,
   useBalance,
+  useReadContract,
   useReadContracts,
   useSendTransaction,
   useSwitchChain,
@@ -15,11 +27,19 @@ import { toast } from "sonner";
 import { PageShell } from "@/components/tf/site-chrome";
 import { Aurora, SpotlightBackground, SpotlightCard } from "@/components/tf/spotlight";
 import { TagioMark } from "@/components/tf/brand";
+import { WalletButton } from "@/components/tf/wallet-button";
 import { useV2Assets, useV2PendingTransaction, useV2SingleQuote } from "@/hooks/useTagioV2";
+import { friendlyError } from "@/lib/tagio-api";
 import { explorerTxUrl, robinhoodChain } from "@/lib/wagmi";
 import { cn } from "@/lib/utils";
-import type { V2TokenInfo } from "@/types/tagio-v2";
+import type { V2QuoteStep, V2TokenInfo } from "@/types/tagio-v2";
 
+/**
+ * `id` and `amount` stay `string | number` on purpose. The router parses search
+ * values as JSON, so coercing a numeric `?id=123` to a string makes the
+ * serializer re-quote it (`?id=%22123%22`) and bounce every bot link through a
+ * redirect. Leaving the parsed type alone round-trips cleanly.
+ */
 export interface TradeSearch {
   id?: string | undefined;
   from?: string | undefined;
@@ -47,8 +67,14 @@ export const Route = createFileRoute("/trade")({
   component: TradePage,
 });
 
-// Strict Robinhood Chain allowlist tokens
-const HARDCODED_ASSETS: V2TokenInfo[] = [
+/* ── Verified asset allowlist ───────────────────────────────────────────────
+ *
+ * The strict list from the v2 trading spec. Nothing outside it is selectable,
+ * quotable, or displayed — the registry endpoint may only refresh metadata for
+ * these addresses, never add to them.
+ */
+
+const TRADE_ASSETS: V2TokenInfo[] = [
   {
     symbol: "USDG",
     name: "Global Dollar",
@@ -69,13 +95,23 @@ const HARDCODED_ASSETS: V2TokenInfo[] = [
     iconUrl: "https://assets.relay.link/icons/1/light.png",
   },
   {
+    symbol: "WETH",
+    name: "Wrapped Ether",
+    address: "0x0bd7d308f8e1639fab988df18a8011f41eacad73",
+    decimals: 18,
+    isBaseCurrency: true,
+    assetType: "native",
+    iconUrl: "https://assets.relay.link/icons/1/light.png",
+  },
+  {
     symbol: "SPCX",
     name: "SpaceX (Space Exploration Technologies)",
     underlyingTicker: "SPCX",
     address: "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
     decimals: 18,
     assetType: "equity",
-    iconUrl: "https://cdn.prod.website-files.com/655f3efc4be468487052e35a/68497d354d7140b01657a793_Ticker%3DSPCX.svg",
+    iconUrl:
+      "https://cdn.prod.website-files.com/655f3efc4be468487052e35a/68497d354d7140b01657a793_Ticker%3DSPCX.svg",
   },
   {
     symbol: "NVDA",
@@ -151,22 +187,13 @@ const HARDCODED_ASSETS: V2TokenInfo[] = [
   },
 ];
 
-function TradePage() {
-  const search: TradeSearch = useSearch({ from: "/trade" });
-  const { address, isConnected, chainId } = useAccount();
-  const { switchChain } = useSwitchChain();
+const ALLOWED_ADDRESSES = new Set(TRADE_ASSETS.map((token) => token.address.toLowerCase()));
+const ALLOWED_SYMBOLS = new Set(TRADE_ASSETS.map((token) => token.symbol));
 
-  // Load registered assets from API or fallback to verified list
-  const { data: assetsData } = useV2Assets();
-  const allTokens = useMemo<V2TokenInfo[]>(() => {
-    if (assetsData?.assets && assetsData.assets.length > 0) {
-      return assetsData.assets;
-    }
-    return HARDCODED_ASSETS;
-  }, [assetsData]);
+/** Native MAX leaves this much ETH behind so the swap itself can still pay gas. */
+const NATIVE_GAS_BUFFER = parseUnits("0.0005", 18);
 
-  // Load pending transaction if ID supplied in search
-  const { data: pendingTxData } = useV2PendingTransaction(search.id);
+const SLIPPAGE_PRESETS = [0.5, 1.0, 2.5] as const;
 
   // Form State
   const [fromSymbol, setFromSymbol] = useState<string>("USDG");
@@ -174,28 +201,38 @@ function TradePage() {
   const [amountIn, setAmountIn] = useState<string>("50");
   const [slippage, setSlippage] = useState<number>(1.0); // 1.0%
 
-  // Prefill from search parameters or pending trade
-  useEffect(() => {
-    if (pendingTxData?.transaction) {
-      const tx = pendingTxData.transaction;
-      if (tx.token) setFromSymbol(tx.token);
-      if (tx.target_value) setToSymbol(tx.target_value);
-      if (tx.amount) setAmountIn(tx.amount);
-    } else {
-      if (search.from) setFromSymbol(search.from.toUpperCase());
-      if (search.to) setToSymbol(search.to.toUpperCase());
-      if (search.amount) setAmountIn(search.amount);
-    }
-  }, [search, pendingTxData]);
+/* ── Token registry ─────────────────────────────────────────────────────── */
 
-  const fromToken: V2TokenInfo = useMemo(
-    () => allTokens.find((t) => t.symbol.toUpperCase() === fromSymbol.toUpperCase()) || HARDCODED_ASSETS[0]!,
-    [allTokens, fromSymbol],
-  );
-  const toToken: V2TokenInfo = useMemo(
-    () => allTokens.find((t) => t.symbol.toUpperCase() === toSymbol.toUpperCase()) || HARDCODED_ASSETS[2]!,
-    [allTokens, toSymbol],
-  );
+/**
+ * The allowlist, with live metadata layered on where the registry knows the
+ * same address. Assets the API reports that aren't on the list are dropped.
+ */
+function useTradeTokens(): V2TokenInfo[] {
+  const { data } = useV2Assets();
+
+  return useMemo(() => {
+    const live = new Map<string, V2TokenInfo>();
+    for (const asset of [
+      ...(data?.baseCurrencies ?? []),
+      ...(data?.featured ?? []),
+      ...(data?.assets ?? []),
+    ]) {
+      const key = asset.address?.toLowerCase();
+      if (!key || !ALLOWED_ADDRESSES.has(key) || live.has(key)) continue;
+      live.set(key, asset);
+    }
+
+    return TRADE_ASSETS.map((token): V2TokenInfo => {
+      const match = live.get(token.address.toLowerCase());
+      if (!match) return token;
+      // Keep our own address casing, and our icon when the registry has none.
+      const merged: V2TokenInfo = { ...token, ...match, address: token.address };
+      if (!match.iconUrl && token.iconUrl) merged.iconUrl = token.iconUrl;
+      return merged;
+    });
+  }, [data]);
+}
+
 
   // Balances
   const { data: nativeBalance } = useBalance({
@@ -242,8 +279,22 @@ function TradePage() {
   const currentFromBalance = tokenBalances[fromToken.symbol] || "0.00";
   const currentToBalance = tokenBalances[toToken.symbol] || "0.00";
 
-  // Single Quote Hook
-  const { data: quote, isLoading: isQuoteLoading } = useV2SingleQuote({
+/* ── Page ───────────────────────────────────────────────────────────────── */
+
+function TradePage() {
+  const search: TradeSearch = useSearch({ from: "/trade" });
+  const { address, isConnected, chainId } = useAccount();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
+
+  const tokens = useTradeTokens();
+  const { balances, refetch: refetchBalances } = useTokenBalances(tokens, address);
+
+
+  const [fromSymbol, setFromSymbol] = useState("USDG");
+  const [toSymbol, setToSymbol] = useState("SPCX");
+  const [amountIn, setAmountIn] = useState("50");
+  const [slippage, setSlippage] = useState<number>(1.0);
+
     fromToken: fromToken.symbol,
     toToken: toToken.symbol,
     amount: amountIn,
@@ -362,15 +413,14 @@ function TradePage() {
       <SpotlightBackground />
       <Aurora />
 
-      <section className="relative mx-auto max-w-4xl px-6 pt-32 pb-16">
-        {/* Header */}
+      <section className="relative mx-auto max-w-4xl px-6 pb-16 pt-32">
         <div className="text-center">
           <h1 className="text-3xl font-extrabold tracking-tight text-ink sm:text-5xl">
             Trade RWA Stocks.
           </h1>
           <p className="mx-auto mt-3 max-w-lg text-balance text-sm leading-relaxed text-ink/65 sm:text-base">
-            Instant, non-custodial swaps between tokenized equities, ETFs, USDG, and ETH.
-            Executed atomically in a single signature on Robinhood Chain.
+            Instant, non-custodial swaps between tokenized equities, ETFs, USDG, and ETH. Executed
+            atomically in a single signature on Robinhood Chain.
           </p>
         </div>
 
