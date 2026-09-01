@@ -342,6 +342,21 @@ function TradePage() {
   });
   const quote = quoteQuery.data;
 
+  const amountInBaseUnits = useMemo(() => {
+    if (!amountValid) return 0n;
+    try {
+      return parseUnits(amountIn, fromToken.decimals);
+    } catch {
+      return 0n;
+    }
+  }, [amountIn, amountValid, fromToken.decimals]);
+
+  const insufficientBalance =
+    Boolean(address) &&
+    amountInBaseUnits > 0n &&
+    fromBalance !== undefined &&
+    amountInBaseUnits > fromBalance;
+
   /* ── Allowance ── */
 
   const swapStep = findSwapStep(quote?.steps);
@@ -709,36 +724,73 @@ function TradePage() {
               </p>
             ) : null}
 
+            {/* Execution */}
             <div className="mt-6">
               {!isConnected ? (
-                <div className="text-center">
-                  <p className="text-xs font-semibold text-ink/60 mb-2">Connect wallet to trade on Robinhood Chain</p>
-                  <Link
-                    to="/app"
-                    className="block w-full rounded-full bg-ink py-4 text-center text-sm font-bold text-cream transition-all hover:bg-ink/90"
-                  >
-                    Connect Wallet in Studio
-                  </Link>
+                <div className="flex flex-col items-center gap-2">
+                  <p className="text-xs font-semibold text-ink/60">
+                    Connect a wallet to trade on Robinhood Chain
+                  </p>
+                  <WalletButton className="w-full justify-center py-4" />
                 </div>
+              ) : wrongNetwork ? (
+                <button
+                  type="button"
+                  disabled={isSwitching}
+                  onClick={() => switchChain({ chainId: robinhoodChain.id })}
+                  className="w-full rounded-full bg-ink py-4 text-sm font-bold text-cream transition-all hover:shadow-xl hover:shadow-ink/40 disabled:opacity-50"
+                >
+                  {isSwitching ? "Switching…" : "Switch to Robinhood Chain"}
+                </button>
+              ) : samePair ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full rounded-full bg-ink/40 py-4 text-sm font-bold text-cream"
+                >
+                  Pick two different assets
+                </button>
+              ) : insufficientBalance ? (
+                <button
+                  type="button"
+                  disabled
+                  className="w-full rounded-full bg-ink/40 py-4 text-sm font-bold text-cream"
+                >
+                  Insufficient {fromToken.symbol} balance
+                </button>
               ) : needsApproval ? (
                 <button
                   type="button"
                   disabled={isBusy}
-                  onClick={handleApprove}
+                  onClick={() => void handleApprove()}
                   className="w-full rounded-full bg-lime py-4 text-sm font-bold text-ink transition-all hover:shadow-lg hover:shadow-lime/30 disabled:opacity-50"
                 >
-                  {isApproving ? "Approving in Wallet..." : `Approve ${fromToken.symbol} for Trading`}
+                  {isApproving
+                    ? "Approving in wallet…"
+                    : approvalReceipt.isLoading
+                      ? "Confirming approval…"
+                      : `Approve ${fromToken.symbol} for trading`}
                 </button>
               ) : (
                 <button
                   type="button"
-                  disabled={isBusy || isQuoteLoading || !Number(amountIn)}
-                  onClick={handleExecuteTrade}
+                  disabled={isBusy || quoteQuery.isLoading || !amountValid || !swapStep}
+                  onClick={() => void handleSwap()}
                   className="w-full rounded-full bg-ink py-4 text-sm font-bold text-cream transition-all hover:shadow-xl hover:shadow-ink/40 disabled:opacity-50"
                 >
-                  {isSwapping || isWaitingReceipt ? "Executing Swap..." : `Swap ${fromToken.symbol} → ${toToken.symbol}`}
+                  {isSwapping
+                    ? "Confirm in wallet…"
+                    : swapReceipt.isLoading
+                      ? "Executing swap…"
+                      : `Swap ${fromToken.symbol} → ${toToken.symbol}`}
                 </button>
               )}
+
+              {isConnected && !wrongNetwork ? (
+                <p className="mt-3 text-center text-[0.7rem] font-medium text-ink/40">
+                  Non-custodial. The calldata you sign comes straight from the best-route quote.
+                </p>
+              ) : null}
             </div>
           </SpotlightCard>
         </div>
