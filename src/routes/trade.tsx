@@ -333,10 +333,25 @@ function TradePage() {
     hash: activeTxHash as `0x${string}` | undefined,
   });
 
-  const handleFlip = () => {
-    const prevFrom = fromSymbol;
+  const selectFrom = (symbol: string) => {
+    if (symbol === toSymbol) setToSymbol(fromSymbol);
+    setFromSymbol(symbol);
+  };
+
+  const selectTo = (symbol: string) => {
+    if (symbol === fromSymbol) setFromSymbol(toSymbol);
+    setToSymbol(symbol);
+  };
+
+  const flip = () => {
+    const previousFrom = fromSymbol;
     setFromSymbol(toSymbol);
-    setToSymbol(prevFrom);
+    setToSymbol(previousFrom);
+    // The old output is the natural new input.
+    if (quote?.amountOutFormatted) setAmountIn(trimAmount(quote.amountOutFormatted));
+  };
+
+  /** Percentage pills work off base units so MAX never rounds past the balance. */
   };
 
   const handleApprove = async () => {
@@ -493,20 +508,15 @@ function TradePage() {
                   className="w-full bg-transparent font-mono text-2xl font-extrabold text-ink outline-none sm:text-3xl"
                 />
 
-                <select
-                  value={fromSymbol}
-                  onChange={(e) => setFromSymbol(e.target.value)}
-                  className="rounded-full border border-ink/15 bg-cream px-3 py-1.5 font-bold text-ink shadow-sm outline-none transition-colors hover:border-ink/30"
-                >
-                  {HARDCODED_ASSETS.map((asset) => (
-                    <option key={asset.symbol} value={asset.symbol}>
-                      {asset.symbol} - {asset.name.split(" ")[0]}
-                    </option>
-                  ))}
-                </select>
+                <TokenSelector
+                  tokens={tokens}
+                  balances={balances}
+                  value={fromToken}
+                  onSelect={selectFrom}
+                  label="Select the token you pay with"
+                />
               </div>
 
-              {/* Percentage Quick Select */}
               <div className="mt-3 flex gap-2">
                 {[25, 50, 75, 100].map((pct) => (
                   <button
@@ -525,13 +535,14 @@ function TradePage() {
               </div>
             </div>
 
-            {/* Flip Button */}
+            {/* Flip */}
             <div className="relative my-2 flex justify-center">
               <button
                 type="button"
-                onClick={handleFlip}
+                onClick={flip}
+                aria-label="Switch the pair around"
+                title="Switch assets"
                 className="flex size-9 items-center justify-center rounded-full border border-ink/15 bg-cream text-ink shadow-md transition-all hover:rotate-180 hover:bg-cream-deep"
-                title="Switch Assets"
               >
                 ⇅
               </button>
@@ -558,17 +569,13 @@ function TradePage() {
                   )}
                 </div>
 
-                <select
-                  value={toSymbol}
-                  onChange={(e) => setToSymbol(e.target.value)}
-                  className="rounded-full border border-ink/15 bg-cream px-3 py-1.5 font-bold text-ink shadow-sm outline-none transition-colors hover:border-ink/30"
-                >
-                  {HARDCODED_ASSETS.map((asset) => (
-                    <option key={asset.symbol} value={asset.symbol}>
-                      {asset.symbol} - {asset.name.split(" ")[0]}
-                    </option>
-                  ))}
-                </select>
+                <TokenSelector
+                  tokens={tokens}
+                  balances={balances}
+                  value={toToken}
+                  onSelect={selectTo}
+                  label="Select the token you receive"
+                />
               </div>
             </div>
 
@@ -710,3 +717,159 @@ function TradePage() {
     </PageShell>
   );
 }
+/* ── Token selector ─────────────────────────────────────────────────────── */
+
+function TokenIcon({ token, className }: { token: V2TokenInfo; className?: string }) {
+  const [failed, setFailed] = useState(false);
+
+  if (!token.iconUrl || failed) {
+    return (
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-full bg-ink/10 font-mono text-[0.6rem] font-bold text-ink/60",
+          className,
+        )}
+        aria-hidden="true"
+      >
+        {token.symbol.slice(0, 2)}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={token.iconUrl}
+      alt=""
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={cn("shrink-0 rounded-full bg-cream object-contain", className)}
+    />
+  );
+}
+
+/**
+ * Searchable picker over the allowlist, with each asset's live balance so the
+ * user can see what they hold without closing the sheet.
+ */
+function TokenSelector({
+  tokens,
+  balances,
+  value,
+  onSelect,
+  label,
+}: {
+  tokens: V2TokenInfo[];
+  balances: Record<string, bigint>;
+  value: V2TokenInfo;
+  onSelect: (symbol: string) => void;
+  label: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    searchRef.current?.focus();
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+
+  const results = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return tokens;
+    return tokens.filter(
+      (token) =>
+        token.symbol.toLowerCase().includes(needle) ||
+        token.name.toLowerCase().includes(needle) ||
+        (token.underlyingTicker?.toLowerCase().includes(needle) ?? false),
+    );
+  }, [tokens, query]);
+
+  return (
+    <div ref={containerRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => {
+          setQuery("");
+          setOpen((current) => !current);
+        }}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={label}
+        className="flex items-center gap-2 rounded-full border border-ink/15 bg-cream px-3 py-1.5 font-bold text-ink shadow-sm outline-none transition-colors hover:border-ink/30"
+      >
+        <TokenIcon token={value} className="size-5" />
+        {value.symbol}
+        <span className="text-[0.6rem] text-ink/40" aria-hidden="true">
+          ▼
+        </span>
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 z-30 mt-2 w-72 overflow-hidden rounded-2xl border border-ink/12 bg-card shadow-[0_24px_60px_-24px_rgba(23,23,26,0.55)]">
+          <div className="border-b border-ink/8 p-2.5">
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search SPCX, Apple, USDG…"
+              aria-label="Search verified assets"
+              className="w-full rounded-xl border border-ink/12 bg-cream/70 px-3 py-2 text-sm text-ink outline-none placeholder:text-ink/35"
+            />
+          </div>
+
+          <ul role="listbox" className="max-h-72 overflow-y-auto p-1.5">
+            {results.map((token) => (
+              <li key={token.symbol}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={token.symbol === value.symbol}
+                  onClick={() => {
+                    onSelect(token.symbol);
+                    setOpen(false);
+                  }}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors",
+                    token.symbol === value.symbol ? "bg-ink/6" : "hover:bg-ink/5",
+                  )}
+                >
+                  <TokenIcon token={token} className="size-7" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-bold text-ink">{token.symbol}</span>
+                    <span className="block truncate text-xs text-ink/50">{token.name}</span>
+                  </span>
+                  <span className="shrink-0 font-mono text-xs font-semibold text-ink/60">
+                    {formatBalance(balances[token.symbol], token.decimals)}
+                  </span>
+                </button>
+              </li>
+            ))}
+
+            {results.length === 0 ? (
+              <li className="px-3 py-6 text-center text-xs text-ink/45">
+                Nothing matches. Only the {tokens.length} verified Robinhood Chain assets are
+                tradable here.
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
