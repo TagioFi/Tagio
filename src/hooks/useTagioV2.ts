@@ -21,7 +21,10 @@ import type {
   V2Invoice,
   V2InvoiceResponse,
   V2OwnerHandlesResponse,
+  V2AuthMeResponse,
   V2ParsedBotIntent,
+  V2PendingTxResponse,
+  V2PendingTxRow,
   V2RegisterHandleBody,
   V2SettlementRecord,
   V2TokenInfo,
@@ -274,7 +277,7 @@ export function useV2InvoicesByOwner(walletAddress: string | undefined) {
 export function useV2PendingTransactions(walletAddress: string | undefined) {
   return useQuery({
     queryKey: ["v2-pending-transactions", walletAddress?.toLowerCase()],
-    queryFn: () => api.get<any[]>(`/v2/pending/wallet/${walletAddress}`),
+    queryFn: () => api.get<V2PendingTxRow[]>(`/v2/pending/wallet/${walletAddress}`),
     enabled: Boolean(walletAddress),
     refetchInterval: 8000,
   });
@@ -283,17 +286,19 @@ export function useV2PendingTransactions(walletAddress: string | undefined) {
 export function useV2AuthMe() {
   return useQuery({
     queryKey: ["v2-auth-me"],
-    queryFn: () => api.get<any>("/v2/auth/me"),
+    queryFn: () => api.get<V2AuthMeResponse>("/v2/auth/me"),
     retry: false,
     staleTime: 1000 * 60 * 2,
   });
 }
 
+/** One bot-prepared request, addressed by `?id=` on /trade or /pay. */
 export function useV2PendingTransaction(id?: string | number) {
   return useQuery({
     queryKey: ["v2-pending-tx", id],
-    queryFn: () => api.get<any>(`/v2/pending/tx/${id}`),
-    enabled: !!id,
+    queryFn: () => api.get<V2PendingTxResponse>(`/v2/pending/tx/${id}`),
+    enabled: Boolean(id),
     staleTime: 1000 * 10,
+    retry: false,
   });
 }
