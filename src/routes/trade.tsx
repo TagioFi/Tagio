@@ -195,12 +195,36 @@ const NATIVE_GAS_BUFFER = parseUnits("0.0005", 18);
 
 const SLIPPAGE_PRESETS = [0.5, 1.0, 2.5] as const;
 
-  // Form State
-  const [fromSymbol, setFromSymbol] = useState<string>("USDG");
-  const [toSymbol, setToSymbol] = useState<string>("SPCX");
-  const [amountIn, setAmountIn] = useState<string>("50");
-  const [slippage, setSlippage] = useState<number>(1.0); // 1.0%
+/* ── Helpers ────────────────────────────────────────────────────────────── */
 
+function isAllowedSymbol(symbol: string | null | undefined): boolean {
+  return Boolean(symbol && ALLOWED_SYMBOLS.has(symbol.toUpperCase()));
+}
+
+/** Drops trailing zeros so "12.500000" reads as "12.5" in the amount field. */
+function trimAmount(value: string): string {
+  return value.includes(".") ? value.replace(/\.?0+$/, "") : value;
+}
+
+function formatBalance(raw: bigint | undefined, decimals: number): string {
+  if (raw === undefined) return "0";
+  if (raw === 0n) return "0";
+  const value = Number(formatUnits(raw, decimals));
+  if (value > 0 && value < 0.0001) return "<0.0001";
+  return value.toLocaleString("en-US", { maximumFractionDigits: value < 1 ? 6 : 4 });
+}
+
+function formatOut(value: string | undefined): string {
+  if (!value) return "0.00";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return value;
+  if (n > 0 && n < 0.000001) return "<0.000001";
+  return n.toLocaleString("en-US", { maximumFractionDigits: n < 1 ? 6 : 4 });
+}
+
+/**
+ * The transaction the user actually signs. `approve` is stripped: allowances
+ * are handled separately so a wallet that is already approved skips straight
 /* ── Token registry ─────────────────────────────────────────────────────── */
 
 /**
@@ -233,51 +257,48 @@ function useTradeTokens(): V2TokenInfo[] {
   }, [data]);
 }
 
+/** Live balances for every allowlisted asset, kept in base units. */
+function useTokenBalances(tokens: V2TokenInfo[], address: `0x${string}` | undefined) {
+  const erc20Tokens = useMemo(() => tokens.filter((token) => !token.isNative), [tokens]);
 
-  // Balances
-  const { data: nativeBalance } = useBalance({
+  const native = useBalance({
     address,
     chainId: robinhoodChain.id,
+    query: { enabled: Boolean(address) },
   });
 
-  const erc20Tokens = useMemo(
-    () => HARDCODED_ASSETS.filter((t) => !t.isNative),
-    [],
-  );
-
-  const balanceContracts = useMemo(() => {
-    if (!address) return [];
-    return erc20Tokens.map((t) => ({
-      address: t.address,
+  const erc20 = useReadContracts({
+    contracts: erc20Tokens.map((token) => ({
+      address: token.address,
       abi: erc20Abi,
-      functionName: "balanceOf",
-      args: [address],
-    }));
-  }, [address, erc20Tokens]);
-
-  const { data: erc20Balances, refetch: refetchBalances } = useReadContracts({
-    contracts: balanceContracts,
+      functionName: "balanceOf" as const,
+      args: address ? [address] : undefined,
+      chainId: robinhoodChain.id,
+    })),
+    query: { enabled: Boolean(address) },
   });
 
-  const tokenBalances = useMemo(() => {
-    const map: Record<string, string> = {};
-    if (nativeBalance) {
-      map["ETH"] = parseFloat(nativeBalance.formatted).toFixed(4);
-    }
-    if (erc20Balances) {
-      erc20Tokens.forEach((t, i) => {
-        const res = erc20Balances[i];
-        if (res && res.result !== undefined) {
-          const val = formatUnits(res.result as bigint, t.decimals);
-          map[t.symbol] = parseFloat(val).toFixed(4);
-        }
-      });
-    }
-    return map;
-  }, [nativeBalance, erc20Balances, erc20Tokens]);
+  const balances = useMemo(() => {
+    const map: Record<string, bigint> = {};
+    const nativeToken = tokens.find((token) => token.isNative);
+    if (nativeToken && native.data) map[nativeToken.symbol] = native.data.value;
 
-  const currentFromBalance = tokenBalances[fromToken.symbol] || "0.00";
-  const currentToBalance = tokenBalances[toToken.symbol] || "0.00";
+    erc20Tokens.forEach((token, index) => {
+      const result = erc20.data?.[index];
+      if (result?.status === "success" && typeof result.result === "bigint") {
+        map[token.symbol] = result.result;
+      }
+    });
+    return map;
+  }, [tokens, erc20Tokens, native.data, erc20.data]);
+
+  const refetch = () => {
+    void native.refetch();
+    void erc20.refetch();
+  };
+
+  return { balances, refetch };
+}
 
 /* ── Page ───────────────────────────────────────────────────────────────── */
 
@@ -352,6 +373,14 @@ function TradePage() {
   };
 
   /** Percentage pills work off base units so MAX never rounds past the balance. */
+  const applyPercent = (percent: number) => {
+    if (fromBalance === undefined) return;
+    let usable = fromBalance;
+    if (fromToken.isNative) {
+      usable = fromBalance > NATIVE_GAS_BUFFER ? fromBalance - NATIVE_GAS_BUFFER : 0n;
+    }
+    const portion = (usable * BigInt(percent)) / 100n;
+    setAmountIn(portion === 0n ? "0" : trimAmount(formatUnits(portion, fromToken.decimals)));
   };
 
   const handleApprove = async () => {
@@ -487,24 +516,30 @@ function TradePage() {
               </div>
             </div>
 
-            {/* Token In Input */}
+            {/* You pay */}
             <div className="rounded-2xl border border-ink/10 bg-cream/70 p-4 transition-all focus-within:border-ink/25">
               <div className="flex items-center justify-between text-xs font-semibold text-ink/50">
                 <span>You Pay</span>
                 <span>
                   Balance:{" "}
-                  <span className="font-mono text-ink font-bold">{currentFromBalance}</span>
+                  <span className="font-mono font-bold text-ink">
+                    {formatBalance(fromBalance, fromToken.decimals)}
+                  </span>
                 </span>
               </div>
 
               <div className="mt-2 flex items-center justify-between gap-4">
                 <input
-                  type="number"
-                  min="0"
-                  step="any"
+                  type="text"
+                  inputMode="decimal"
                   value={amountIn}
-                  onChange={(e) => setAmountIn(e.target.value)}
+                  onChange={(event) => {
+                    const next = event.target.value.replace(/[^0-9.]/g, "");
+                    if ((next.match(/\./g)?.length ?? 0) > 1) return;
+                    setAmountIn(next);
+                  }}
                   placeholder="0.00"
+                  aria-label="Amount to swap"
                   className="w-full bg-transparent font-mono text-2xl font-extrabold text-ink outline-none sm:text-3xl"
                 />
 
@@ -518,18 +553,20 @@ function TradePage() {
               </div>
 
               <div className="mt-3 flex gap-2">
-                {[25, 50, 75, 100].map((pct) => (
+                {[25, 50, 75, 100].map((percent) => (
                   <button
-                    key={pct}
+                    key={percent}
                     type="button"
-                    onClick={() => {
-                      const maxNum = parseFloat(currentFromBalance) || 0;
-                      const calculated = ((maxNum * pct) / 100).toFixed(4);
-                      setAmountIn(calculated);
-                    }}
-                    className="rounded-md border border-ink/10 bg-cream-deep/60 px-2 py-0.5 text-xs font-semibold text-ink/60 hover:bg-cream-deep hover:text-ink"
+                    disabled={fromBalance === undefined || fromBalance === 0n}
+                    onClick={() => applyPercent(percent)}
+                    title={
+                      percent === 100 && fromToken.isNative
+                        ? "Leaves a small amount of ETH for gas"
+                        : undefined
+                    }
+                    className="rounded-md border border-ink/10 bg-cream-deep/60 px-2 py-0.5 text-xs font-semibold text-ink/60 transition-colors hover:bg-cream-deep hover:text-ink disabled:opacity-40 disabled:hover:bg-cream-deep/60"
                   >
-                    {pct === 100 ? "MAX" : `${pct}%`}
+                    {percent === 100 ? "MAX" : `${percent}%`}
                   </button>
                 ))}
               </div>
@@ -548,24 +585,24 @@ function TradePage() {
               </button>
             </div>
 
-            {/* Token Out Input */}
+            {/* You receive */}
             <div className="rounded-2xl border border-ink/10 bg-cream/70 p-4">
               <div className="flex items-center justify-between text-xs font-semibold text-ink/50">
                 <span>You Receive</span>
                 <span>
                   Balance:{" "}
-                  <span className="font-mono text-ink font-bold">{currentToBalance}</span>
+                  <span className="font-mono font-bold text-ink">
+                    {formatBalance(toBalance, toToken.decimals)}
+                  </span>
                 </span>
               </div>
 
               <div className="mt-2 flex items-center justify-between gap-4">
-                <div className="w-full font-mono text-2xl font-extrabold text-ink sm:text-3xl">
-                  {isQuoteLoading ? (
-                    <span className="text-ink/30 animate-pulse">Quoting...</span>
-                  ) : quote?.amountOutFormatted ? (
-                    parseFloat(quote.amountOutFormatted).toFixed(4)
+                <div className="w-full truncate font-mono text-2xl font-extrabold text-ink sm:text-3xl">
+                  {quoteQuery.isLoading ? (
+                    <span className="animate-pulse text-ink/30">Quoting…</span>
                   ) : (
-                    "0.00"
+                    formatOut(quote?.amountOutFormatted)
                   )}
                 </div>
 
@@ -651,49 +688,57 @@ function TradePage() {
           </SpotlightCard>
         </div>
 
-        {/* RWA Holdings Section */}
+        {/* Holdings */}
         <div className="mt-12">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-bold tracking-tight text-ink">Your Robinhood RWA Holdings</h3>
-            <span className="text-xs font-semibold text-ink/40">Chain ID: 4663</span>
+          <div className="mb-4 flex items-center justify-between">
+            <h3 className="text-lg font-bold tracking-tight text-ink">
+              Your Robinhood RWA Holdings
+            </h3>
+            <span className="text-xs font-semibold text-ink/40">Chain ID: {robinhoodChain.id}</span>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {HARDCODED_ASSETS.map((asset) => {
-              const bal = tokenBalances[asset.symbol] || "0.00";
-              const hasBal = parseFloat(bal) > 0;
+            {tokens.map((asset) => {
+              const raw = balances[asset.symbol];
+              const hasBalance = raw !== undefined && raw > 0n;
               return (
                 <SpotlightCard
                   key={asset.symbol}
                   className={cn(
                     "p-4 transition-all",
-                    hasBal ? "border-lime/40 bg-lime/5" : "opacity-80",
+                    hasBalance ? "border-lime/40 bg-lime/5" : "opacity-80",
                   )}
                 >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="rounded bg-cream-deep px-1.5 py-0.5 font-mono text-xs font-bold text-ink">
-                        {asset.symbol}
-                      </span>
-                      <div className="mt-1 text-xs text-ink/60 truncate max-w-[140px]">
-                        {asset.name}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <TokenIcon token={asset} className="size-7" />
+                      <div className="min-w-0">
+                        <span className="rounded bg-cream-deep px-1.5 py-0.5 font-mono text-xs font-bold text-ink">
+                          {asset.symbol}
+                        </span>
+                        <div className="mt-1 max-w-[140px] truncate text-xs text-ink/60">
+                          {asset.name}
+                        </div>
                       </div>
                     </div>
+
                     <div className="text-right">
-                      <div className="font-mono text-sm font-bold text-ink">{bal}</div>
-                      {hasBal ? (
+                      <div className="font-mono text-sm font-bold text-ink">
+                        {formatBalance(raw, asset.decimals)}
+                      </div>
+                      {hasBalance && asset.symbol !== "USDG" ? (
                         <button
                           type="button"
                           onClick={() => {
-                            setFromSymbol(asset.symbol);
+                            selectFrom(asset.symbol);
                             setToSymbol("USDG");
-                            setAmountIn(bal);
+                            setAmountIn(trimAmount(formatUnits(raw, asset.decimals)));
                           }}
                           className="mt-1 text-xs font-bold text-lime-deep hover:underline"
                         >
                           Sell for USDG
                         </button>
-                      ) : (
+                      ) : asset.symbol !== "USDG" ? (
                         <button
                           type="button"
                           onClick={() => {
@@ -705,18 +750,27 @@ function TradePage() {
                         >
                           Buy with USDG
                         </button>
-                      )}
+                      ) : null}
                     </div>
                   </div>
                 </SpotlightCard>
               );
             })}
           </div>
+
+          <p className="mt-6 text-center text-xs text-ink/40">
+            Want payments to land in these automatically?{" "}
+            <Link to="/app" className="font-bold text-ink/70 underline-offset-2 hover:underline">
+              Set a receive-mix in the studio
+            </Link>
+            .
+          </p>
         </div>
       </section>
     </PageShell>
   );
 }
+
 /* ── Token selector ─────────────────────────────────────────────────────── */
 
 function TokenIcon({ token, className }: { token: V2TokenInfo; className?: string }) {
