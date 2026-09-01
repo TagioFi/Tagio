@@ -28,7 +28,12 @@ import {
 } from "@/hooks/useTagioV2";
 import { cleanHandle, formatBps, friendlyError, shortAddress } from "@/lib/tagio-api";
 import { cn } from "@/lib/utils";
-import type { V2ElectionInput, V2Invoice, V2PendingTransaction } from "@/types/tagio-v2";
+import type {
+  V2ElectionInput,
+  V2Invoice,
+  V2PendingTransaction,
+  V2PendingTxRow,
+} from "@/types/tagio-v2";
 
 export const Route = createFileRoute("/app")({
   head: () => ({ meta: [{ title: "Settlement studio · TagioFi" }] }),
@@ -67,11 +72,12 @@ function StudioPage() {
     !handlesQuery.isLoading &&
     !handles.some((item) => item.handle.toLowerCase() === xTag);
 
-  // Modal: Actionable pending transaction for this user
+  // Modal: Actionable pending transaction for this user. The listing aliases
+  // the row id to `request_id`, so key dismissals off whichever is present.
   const pendingTxs = (pendingQuery.data ?? []).filter(
-    (tx: any) => tx.status === "pending" && !dismissedPendingIds.includes(tx.request_id)
+    (tx) => tx.status === "pending" && !dismissedPendingIds.includes(pendingTxKey(tx)),
   );
-  const activePendingTx = pendingTxs.length > 0 ? pendingTxs[0] : null;
+  const activePendingTx = pendingTxs.length > 0 ? pendingTxs[0]! : null;
 
   const dismissPendingTx = (reqId: string) => {
     setDismissedPendingIds((prev) => [...prev, reqId]);
@@ -222,7 +228,7 @@ function StudioPage() {
       {activePendingTx ? (
         <PendingTxReviewModal
           tx={activePendingTx}
-          onDismiss={() => dismissPendingTx(activePendingTx.request_id)}
+          onDismiss={() => dismissPendingTx(pendingTxKey(activePendingTx))}
         />
       ) : null}
     </PageShell>
@@ -231,13 +237,11 @@ function StudioPage() {
 
 /* ── Modal: Pending Transaction Review & Sign ────────────────────────── */
 
-function PendingTxReviewModal({
-  tx,
-  onDismiss,
-}: {
-  tx: any;
-  onDismiss: () => void;
-}) {
+function pendingTxKey(tx: V2PendingTxRow): string {
+  return String(tx.request_id ?? tx.id);
+}
+
+function PendingTxReviewModal({ tx, onDismiss }: { tx: V2PendingTxRow; onDismiss: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <SpotlightCard className="relative w-full max-w-md border-amber-500/40 p-8 shadow-2xl">
@@ -245,9 +249,7 @@ function PendingTxReviewModal({
           Action Required
         </span>
 
-        <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink">
-          Pending Transaction
-        </h2>
+        <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink">Pending Transaction</h2>
         <p className="mt-2 text-sm leading-relaxed text-ink/65">
           You have an incoming payment waiting to settle into your elected mix on Robinhood Chain.
         </p>
@@ -259,18 +261,16 @@ function PendingTxReviewModal({
               {tx.amount} {tx.token?.toUpperCase()}
             </span>
           </div>
-          {tx.sender_handle || tx.requested_by_wallet ? (
+          {tx.requested_by_wallet ? (
             <div className="flex items-center justify-between">
               <span className="text-ink/50">Sender:</span>
-              <span className="font-semibold text-ink">
-                {tx.sender_handle ? `@${tx.sender_handle}` : shortAddress(tx.requested_by_wallet)}
-              </span>
+              <span className="font-semibold text-ink">{shortAddress(tx.requested_by_wallet)}</span>
             </div>
           ) : null}
           <div className="flex items-center justify-between">
             <span className="text-ink/50">Target:</span>
             <span className="font-semibold text-ink">
-              {tx.target_value ? `@${tx.target_value.replace(/^[@#]/, "")}` : tx.recipient_identifier || "Your Tag"}
+              {tx.target_value ? `@${tx.target_value.replace(/^[@#]/, "")}` : "Your Tag"}
             </span>
           </div>
           {tx.tweet_url ? (
@@ -290,7 +290,7 @@ function PendingTxReviewModal({
 
         <div className="mt-6 flex flex-col gap-2.5">
           <a
-            href={`/pay/${tx.request_id || tx.id}`}
+            href={`/pay/${pendingTxKey(tx)}`}
             className="w-full rounded-full bg-ink py-3 text-center text-sm font-bold text-cream transition-colors hover:bg-ink/85"
           >
             Review & Settle Now
@@ -410,7 +410,7 @@ function ActivitySection({
   pendingTxs,
   invoices,
 }: {
-  pendingTxs: any[];
+  pendingTxs: V2PendingTxRow[];
   invoices: V2Invoice[];
 }) {
   const [tab, setTab] = useState<"pending" | "invoices">("pending");
@@ -418,16 +418,14 @@ function ActivitySection({
   return (
     <SpotlightCard className="p-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink/40">
-          Activity
-        </h2>
+        <h2 className="text-xs font-bold uppercase tracking-[0.14em] text-ink/40">Activity</h2>
         <div className="flex gap-1 rounded-lg bg-cream/70 p-0.5 text-xs font-semibold">
           <button
             type="button"
             onClick={() => setTab("pending")}
             className={cn(
               "rounded-md px-2.5 py-1 transition-colors",
-              tab === "pending" ? "bg-ink text-cream" : "text-ink/60 hover:text-ink"
+              tab === "pending" ? "bg-ink text-cream" : "text-ink/60 hover:text-ink",
             )}
           >
             Pending ({pendingTxs.length})
@@ -437,7 +435,7 @@ function ActivitySection({
             onClick={() => setTab("invoices")}
             className={cn(
               "rounded-md px-2.5 py-1 transition-colors",
-              tab === "invoices" ? "bg-ink text-cream" : "text-ink/60 hover:text-ink"
+              tab === "invoices" ? "bg-ink text-cream" : "text-ink/60 hover:text-ink",
             )}
           >
             Invoices ({invoices.length})
@@ -450,10 +448,10 @@ function ActivitySection({
           pendingTxs.length === 0 ? (
             <p className="py-4 text-center text-xs text-ink/40">No pending transactions.</p>
           ) : (
-            pendingTxs.map((tx: any) => (
+            pendingTxs.map((tx) => (
               <a
                 key={tx.id || tx.request_id}
-                href={`/pay/${tx.request_id || tx.id}`}
+                href={`/pay/${pendingTxKey(tx)}`}
                 className="flex items-center justify-between rounded-xl border border-ink/8 bg-cream/40 px-3.5 py-2.5 text-xs transition-colors hover:bg-cream/80"
               >
                 <div>
@@ -463,8 +461,8 @@ function ActivitySection({
                   <p className="text-ink/50">
                     {tx.target_value
                       ? `To @${tx.target_value.replace(/^[@#]/, "")}`
-                      : tx.sender_handle
-                        ? `From @${tx.sender_handle}`
+                      : tx.requested_by_wallet
+                        ? `From ${shortAddress(tx.requested_by_wallet)}`
                         : "Pending Payment"}
                   </p>
                 </div>
@@ -587,13 +585,7 @@ function ClaimTagCard({
 
 /* ── Election Editor ────────────────────────────────────────────────────── */
 
-function ElectionEditor({
-  handle,
-  ownerWallet,
-}: {
-  handle: string;
-  ownerWallet: string;
-}) {
+function ElectionEditor({ handle, ownerWallet }: { handle: string; ownerWallet: string }) {
   const detail = useV2Handle(handle);
   const assetsQuery = useV2Assets();
   const update = useUpdateV2Elections();
