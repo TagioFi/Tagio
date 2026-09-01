@@ -83,6 +83,35 @@ export interface V2UpdateElectionsBody {
 
 // ── Settlement & Quote Types ───────────────────────────────────────────────
 
+/**
+ * One wallet transaction inside a quote step, ready to hand to the wallet
+ * client verbatim.
+ */
+export interface V2StepTxData {
+  to: `0x${string}`;
+  data: `0x${string}`;
+  value?: string;
+  chainId?: number;
+}
+
+export interface V2StepItem {
+  status: "not_started" | "incomplete" | "complete" | string;
+  data: V2StepTxData;
+}
+
+/**
+ * A leg of the execution plan. The quote engine emits them in the order they
+ * must be sent — an ERC20 `approve` first when the router needs an allowance,
+ * then the `swap` (or `transfer`, for a same-asset settle).
+ */
+export interface V2QuoteStep {
+  id: "approve" | "swap" | "transfer" | (string & {});
+  action: string;
+  description?: string;
+  kind: "transaction" | (string & {});
+  items: V2StepItem[];
+}
+
 export interface SingleSwapQuoteResult {
   fromToken: V2TokenInfo;
   toToken: V2TokenInfo;
@@ -94,7 +123,7 @@ export interface SingleSwapQuoteResult {
   priceImpactPct: number;
   timeEstimate: number;
   requestId?: string;
-  steps?: unknown[];
+  steps?: V2QuoteStep[];
 }
 
 export interface PortfolioQuoteLegResult {
