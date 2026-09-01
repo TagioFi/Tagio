@@ -1,7 +1,7 @@
 import Groq from "groq-sdk";
 import { config } from "../../config";
 
-export type V2BotAction = "send" | "invoice" | "election" | "unrecognized";
+export type V2BotAction = "send" | "swap" | "invoice" | "election" | "escrow" | "giveaway" | "airdrop" | "unrecognized";
 export type V2TargetType = "x_account" | "hashtag" | "wallet";
 
 export interface V2ParsedBotIntent {
@@ -10,41 +10,61 @@ export interface V2ParsedBotIntent {
   targetType: V2TargetType | null;
   amount: number | null;
   token: string | null;
+  fromToken?: string | null;
+  toToken?: string | null;
   memo: string | null;
   elections: { symbol: string; basisPoints: number }[] | null;
+  giveawayCount?: number | null;
   confidence: number;
 }
 
-const SYSTEM_PROMPT = `You are the TagioFi v2 natural language intent parser for Twitter/X bot commands on Robinhood Chain (ETH, USDG, and tokenized RWA equities like SPYR, QQQR, AAPLR, TSLAR, NVDAR, GLDR).
+const SYSTEM_PROMPT = `You are the TagioFi universal natural language intent parser for Twitter/X bot commands on Robinhood Chain (ETH, USDG, WETH, and tokenized equities: SPCX, AAPL, TSLA, NVDA, GOOGL, AMZN, MSFT, META, COIN).
 
 Classify the user's message into one of these actions:
 1. "send": Paying, tipping, transferring, or sending funds to a recipient (@handle, #tag, or 0x address).
    Examples:
-   - "@TagioPayBot send @vlad 40 usdg" -> action: "send", target: "@vlad", targetType: "x_account", amount: 40, token: "USDG"
-   - "@TagioPayBot send 40 usdg to @vlad" -> action: "send", target: "@vlad", targetType: "x_account", amount: 40, token: "USDG"
+   - "@TagioPayBot send @nobody 0.5 usdg" -> action: "send", target: "@nobody", targetType: "x_account", amount: 0.5, token: "USDG"
+   - "@TagioPayBot send 0.5 usdg to @nobody" -> action: "send", target: "@nobody", targetType: "x_account", amount: 0.5, token: "USDG"
    - "@TagioPayBot tip #alex 100 USDG for the design" -> action: "send", target: "#alex", targetType: "hashtag", amount: 100, token: "USDG", memo: "for the design"
-   - "@TagioPayBot pay 0.5 eth to 0x1234567890123456789012345678901234567890" -> action: "send", target: "0x1234567890123456789012345678901234567890", targetType: "wallet", amount: 0.5, token: "ETH"
+   - "@TagioPayBot pay 0.05 eth to 0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9" -> action: "send", target: "0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9", targetType: "wallet", amount: 0.05, token: "ETH"
    - "send $50 in usdg to @bob" -> action: "send", target: "@bob", targetType: "x_account", amount: 50, token: "USDG"
 
-2. "invoice": Creating a payment link or invoice request.
+2. "swap": Swapping or buying assets.
    Examples:
-   - "invoice @client 250 USDG for frontend work" -> action: "invoice", target: "@client", amount: 250, token: "USDG", memo: "frontend work"
+   - "swap 50 USDG to AAPL" -> action: "swap", amount: 50, fromToken: "USDG", toToken: "AAPL"
+   - "buy 100 USDG of SPCX" -> action: "swap", amount: 100, fromToken: "USDG", toToken: "SPCX"
 
-3. "election": Setting or updating portfolio receive-side preference.
+3. "invoice": Creating an invoice or pay-link request.
    Examples:
-   - "set portfolio 60% SPYR 30% USDG 10% GLDR" -> action: "election", elections: [{"symbol": "SPYR", "basisPoints": 6000}, {"symbol": "USDG", "basisPoints": 3000}, {"symbol": "GLDR", "basisPoints": 1000}]
+   - "invoice @client 250 USDG for frontend work" -> action: "invoice", target: "@client", targetType: "x_account", amount: 250, token: "USDG", memo: "frontend work"
 
-4. "unrecognized": Casual chat, questions, or unclear intent.
+4. "election": Setting portfolio receive-side preference (total basis points must equal 10,000 = 100%).
+   Examples:
+   - "set portfolio 60% SPCX 30% USDG 10% NVDA" -> action: "election", elections: [{"symbol": "SPCX", "basisPoints": 6000}, {"symbol": "USDG", "basisPoints": 3000}, {"symbol": "NVDA", "basisPoints": 1000}]
+   - "set my mix to 100 USDG" -> action: "election", elections: [{"symbol": "USDG", "basisPoints": 10000}]
 
-Return ONLY a JSON object matching this schema:
+5. "escrow": Creating or managing a milestone escrow.
+   Examples:
+   - "escrow 500 usdg to @designer for 3 logos" -> action: "escrow", target: "@designer", targetType: "x_account", amount: 500, token: "USDG", memo: "for 3 logos"
+
+6. "giveaway" or "airdrop": Community engagement rewards.
+   Examples:
+   - "giveaway 50 usdg to 10 random people who liked this" -> action: "giveaway", amount: 50, token: "USDG", giveawayCount: 10
+
+7. "unrecognized": Casual chat, questions, greetings, or non-financial statements.
+
+Return ONLY a JSON object:
 {
-  "action": "send" | "invoice" | "election" | "unrecognized",
+  "action": "send" | "swap" | "invoice" | "election" | "escrow" | "giveaway" | "airdrop" | "unrecognized",
   "target": string | null,
   "targetType": "x_account" | "hashtag" | "wallet" | null,
   "amount": number | null,
   "token": string | null,
+  "fromToken": string | null,
+  "toToken": string | null,
   "memo": string | null,
   "elections": [{"symbol": string, "basisPoints": number}] | null,
+  "giveawayCount": number | null,
   "confidence": number
 }`;
 
@@ -54,58 +74,7 @@ function getGroqClient(): Groq {
   return groqClient;
 }
 
-// Fast deterministic regex checks for standard phrases (0ms latency)
-function fastRegexParse(text: string): V2ParsedBotIntent | null {
-  const clean = text.replace(/@tagiopaybot\s*/gi, "").trim();
-
-  // Match: send @target 40 usdg OR send 40 usdg to @target OR $send @target 40 usdg
-  const pA = /(?:\$|\b)send\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})\s+\$?([0-9]*\.?[0-9]+)\s*([a-zA-Z0-9_]{2,10})/i;
-  const mA = clean.match(pA);
-  if (mA) {
-    const targetRaw = mA[1];
-    const amount = parseFloat(mA[2]);
-    const token = mA[3].toUpperCase();
-    const targetType: V2TargetType = targetRaw.startsWith("@") ? "x_account" : targetRaw.startsWith("#") ? "hashtag" : "wallet";
-    return {
-      action: "send",
-      target: targetRaw,
-      targetType,
-      amount,
-      token,
-      memo: null,
-      elections: null,
-      confidence: 1.0,
-    };
-  }
-
-  const pB = /(?:\$|\b)send\s+\$?([0-9]*\.?[0-9]+)\s*([a-zA-Z0-9_]{2,10})\s+to\s+(@[a-zA-Z0-9_]{1,15}|#[a-zA-Z0-9_]{3,32}|0x[a-fA-F0-9]{40})/i;
-  const mB = clean.match(pB);
-  if (mB) {
-    const amount = parseFloat(mB[1]);
-    const token = mB[2].toUpperCase();
-    const targetRaw = mB[3];
-    const targetType: V2TargetType = targetRaw.startsWith("@") ? "x_account" : targetRaw.startsWith("#") ? "hashtag" : "wallet";
-    return {
-      action: "send",
-      target: targetRaw,
-      targetType,
-      amount,
-      token,
-      memo: null,
-      elections: null,
-      confidence: 1.0,
-    };
-  }
-
-  return null;
-}
-
 export async function parseV2BotIntent(text: string): Promise<V2ParsedBotIntent> {
-  // Step 1: Fast regex pass
-  const fast = fastRegexParse(text);
-  if (fast) return fast;
-
-  // Step 2: Groq AI fallback for natural phrasing
   if (!config.groq.apiKey) {
     return {
       action: "unrecognized",
@@ -138,13 +107,17 @@ export async function parseV2BotIntent(text: string): Promise<V2ParsedBotIntent>
       action: json.action || "unrecognized",
       target: json.target || null,
       targetType: json.targetType || null,
-      amount: typeof json.amount === "number" ? json.amount : null,
-      token: json.token ? json.token.toUpperCase() : null,
+      amount: typeof json.amount === "number" ? json.amount : json.amount ? parseFloat(json.amount) : null,
+      token: json.token ? String(json.token).toUpperCase() : null,
+      fromToken: json.fromToken ? String(json.fromToken).toUpperCase() : null,
+      toToken: json.toToken ? String(json.toToken).toUpperCase() : null,
       memo: json.memo || null,
       elections: Array.isArray(json.elections) ? json.elections : null,
-      confidence: typeof json.confidence === "number" ? json.confidence : 0.8,
+      giveawayCount: typeof json.giveawayCount === "number" ? json.giveawayCount : null,
+      confidence: typeof json.confidence === "number" ? json.confidence : 0.95,
     };
-  } catch (err) {
+  } catch (err: any) {
+    console.error("[GroqIntentParser] Error:", err.message);
     return {
       action: "unrecognized",
       target: null,

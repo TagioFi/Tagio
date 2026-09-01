@@ -76,27 +76,70 @@ router.get("/v2/pending/wallet/:walletAddress", async (req, res, next) => {
   try {
     const wallet = req.params.walletAddress.toLowerCase();
 
-    // Look up X handle if wallet is linked
+    // Look up X handle & user id if wallet is linked
     const identityRes = await pool.query(
-      "SELECT x_handle FROM v2_wallet_identities WHERE LOWER(wallet_address) = $1 LIMIT 1",
+      "SELECT x_handle, x_user_id FROM v2_wallet_identities WHERE LOWER(wallet_address) = $1 LIMIT 1",
       [wallet]
     );
     const xHandle = identityRes.rows[0]?.x_handle || "";
+    const xUserId = identityRes.rows[0]?.x_user_id || "";
 
     // Query pending_transactions where this wallet or their X handle is sender or recipient
     const { rows } = await pool.query(
-      `SELECT pt.*, pt.created_at as time
-       FROM pending_transactions pt
-       WHERE (
-         LOWER(pt.sender_address) = $1 
-         OR LOWER(pt.recipient_address) = $1
-         OR ($2 != '' AND (LOWER(pt.sender_handle) = LOWER($2) OR LOWER(pt.recipient_identifier) = LOWER($2) OR LOWER(pt.recipient_identifier) = LOWER('@' || $2)))
-       )
-       ORDER BY pt.created_at DESC LIMIT 50`,
-      [wallet, xHandle]
+      `SELECT 
+         id,
+         id as request_id,
+         requested_by_wallet,
+         requested_by_x_user_id,
+         target_type,
+         target_value,
+         resolved_to_wallet,
+         token,
+         amount,
+         status,
+         tweet_url,
+         created_at,
+         expires_at
+       FROM pending_transactions
+       WHERE status = 'pending'
+         AND (
+           LOWER(requested_by_wallet) = $1
+           OR LOWER(resolved_to_wallet) = $1
+           OR ($2 != '' AND LOWER(requested_by_x_user_id) = $2)
+           OR ($3 != '' AND (LOWER(target_value) = LOWER($3) OR LOWER(target_value) = LOWER('@' || $3)))
+         )
+       ORDER BY created_at DESC LIMIT 50`,
+      [wallet, xUserId, xHandle]
     );
 
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /v2/pending/tx/:id — Get pending transaction details
+router.get("/v2/pending/tx/:id", async (req, res, next) => {
+  try {
+    const rawId = req.params.id.replace(/^pnd_/, "");
+    const { rows } = await pool.query(
+      "SELECT * FROM pending_transactions WHERE id = $1 OR source_ref = $1 LIMIT 1",
+      [rawId]
+    );
+    if (rows.length === 0) {
+      res.status(404).json({ error: "Pending transaction not found" });
+      return;
+    }
+
+    const tx = rows[0];
+    const targetClean = tx.target_value.replace(/^[@#]/, "");
+    const handleDetails = await getHandleDetails(targetClean);
+
+    res.json({
+      transaction: tx,
+      handleDetails,
+      isExpired: new Date(tx.expires_at) < new Date(),
+    });
   } catch (err) {
     next(err);
   }

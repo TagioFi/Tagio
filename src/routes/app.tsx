@@ -250,26 +250,41 @@ function PendingTxReviewModal({
           <div className="flex items-center justify-between">
             <span className="text-ink/50">Amount:</span>
             <span className="font-mono font-bold text-ink">
-              {tx.amount} {tx.token}
+              {tx.amount} {tx.token?.toUpperCase()}
             </span>
           </div>
-          {tx.sender_handle ? (
+          {tx.sender_handle || tx.requested_by_wallet ? (
             <div className="flex items-center justify-between">
-              <span className="text-ink/50">From:</span>
-              <span className="font-semibold text-ink">@{tx.sender_handle}</span>
+              <span className="text-ink/50">Sender:</span>
+              <span className="font-semibold text-ink">
+                {tx.sender_handle ? `@${tx.sender_handle}` : shortAddress(tx.requested_by_wallet)}
+              </span>
             </div>
           ) : null}
           <div className="flex items-center justify-between">
             <span className="text-ink/50">Target:</span>
             <span className="font-semibold text-ink">
-              {tx.recipient_identifier || "Your Tag"}
+              {tx.target_value ? `@${tx.target_value.replace(/^[@#]/, "")}` : tx.recipient_identifier || "Your Tag"}
             </span>
           </div>
+          {tx.tweet_url ? (
+            <div className="flex items-center justify-between">
+              <span className="text-ink/50">Source:</span>
+              <a
+                href={tx.tweet_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-semibold text-lime underline hover:text-lime/80"
+              >
+                View on Twitter/X ↗
+              </a>
+            </div>
+          ) : null}
         </div>
 
         <div className="mt-6 flex flex-col gap-2.5">
           <a
-            href={`/pay/${tx.request_id}`}
+            href={`/pay/${tx.request_id || tx.id}`}
             className="w-full rounded-full bg-ink py-3 text-center text-sm font-bold text-cream transition-colors hover:bg-ink/85"
           >
             Review & Settle Now
@@ -432,18 +447,22 @@ function ActivitySection({
             pendingTxs.map((tx: any) => (
               <a
                 key={tx.id || tx.request_id}
-                href={`/pay/${tx.request_id}`}
+                href={`/pay/${tx.request_id || tx.id}`}
                 className="flex items-center justify-between rounded-xl border border-ink/8 bg-cream/40 px-3.5 py-2.5 text-xs transition-colors hover:bg-cream/80"
               >
                 <div>
                   <p className="font-bold text-ink">
-                    {tx.amount} {tx.token}
+                    {tx.amount} {tx.token?.toUpperCase()}
                   </p>
                   <p className="text-ink/50">
-                    {tx.sender_handle ? `From @${tx.sender_handle}` : "Inbound Payment"}
+                    {tx.target_value
+                      ? `To @${tx.target_value.replace(/^[@#]/, "")}`
+                      : tx.sender_handle
+                        ? `From @${tx.sender_handle}`
+                        : "Pending Payment"}
                   </p>
                 </div>
-                <span className="rounded-full bg-amber-500/15 px-2.5 py-1 font-semibold text-amber-900 dark:text-amber-300">
+                <span className="rounded-full bg-amber-500/15 px-2.5 py-1 font-semibold text-amber-900 dark:text-amber-300 capitalize">
                   {tx.status}
                 </span>
               </a>

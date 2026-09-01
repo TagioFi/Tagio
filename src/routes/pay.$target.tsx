@@ -17,6 +17,7 @@ import {
   useV2ElectionQuote,
   useV2Handle,
   useV2Invoice,
+  useV2PendingTransaction,
 } from "@/hooks/useTagioV2";
 import { executeSettlement } from "@/lib/relay";
 import { formatAmount, formatBps, friendlyError, shortAddress } from "@/lib/tagio-api";
@@ -32,25 +33,44 @@ const BASE_TOKENS = ["USDG", "ETH"] as const;
 function PayPage() {
   const { target } = Route.useParams();
   const isInvoice = target.startsWith("inv_");
+  const isPendingTx = target.startsWith("pnd_") || /^\d+$/.test(target);
 
   const invoiceQuery = useV2Invoice(isInvoice ? target : undefined);
   const invoice = invoiceQuery.data;
 
-  // For an invoice the tag comes from the invoice record.
-  const handle = isInvoice ? invoice?.recipient_handle : target;
+  const pendingQuery = useV2PendingTransaction(isPendingTx ? target : undefined);
+  const pendingTx = pendingQuery.data;
+
+  // Resolve recipient handle from invoice or pending transaction or route target
+  const handle = isInvoice
+    ? invoice?.recipient_handle
+    : isPendingTx
+      ? pendingTx?.handleDetails?.handle || pendingTx?.transaction?.target_value?.replace(/^[@#]/, "")
+      : target;
+
   const handleQuery = useV2Handle(handle);
 
   const { address, isConnected, isWrongNetwork, walletClient } = useWallet();
   const [amount, setAmount] = useState("");
   const [fromToken, setFromToken] = useState<string>("USDG");
 
-  // Prefill once the invoice resolves.
+  // Prefill once invoice or pending transaction resolves
   useEffect(() => {
     if (invoice) {
       setAmount(String(invoice.target_amount));
       setFromToken(invoice.target_token_symbol);
+    } else if (pendingTx?.transaction) {
+      setAmount(String(pendingTx.transaction.amount));
+      const rawToken = pendingTx.transaction.token?.toUpperCase();
+      setFromToken(rawToken === "NATIVE" ? "ETH" : rawToken || "USDG");
+    } else if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      const qAmount = sp.get("amount");
+      const qToken = sp.get("token");
+      if (qAmount) setAmount(qAmount);
+      if (qToken) setFromToken(qToken.toUpperCase());
     }
-  }, [invoice]);
+  }, [invoice, pendingTx]);
 
   const quoteParams = useMemo(
     () => ({

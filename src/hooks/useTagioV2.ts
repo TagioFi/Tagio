@@ -274,3 +274,12 @@ export function useV2AuthMe() {
     staleTime: 1000 * 60 * 2,
   });
 }
+
+export function useV2PendingTransaction(id?: string | number) {
+  return useQuery({
+    queryKey: ["v2-pending-tx", id],
+    queryFn: () => api.get<any>(`/v2/pending/tx/${id}`),
+    enabled: !!id,
+    staleTime: 1000 * 10,
+  });
+}
