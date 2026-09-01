@@ -10,7 +10,10 @@
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "push:origin": "git push origin master",
+    "push:public": "python3 scripts/sync-public.py",
+    "push:all": "git push origin master && python3 scripts/sync-public.py"
   },
   "overrides": {
     "rolldown": "1.2.1"
