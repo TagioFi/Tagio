@@ -357,13 +357,53 @@ function TradePage() {
     return allowance < amountInBaseUnits;
   }, [needsAllowance, amountInBaseUnits, allowanceQuery.data]);
 
+  /* ── Execution ── */
+
   const { writeContractAsync: writeApprove, isPending: isApproving } = useWriteContract();
   const { sendTransactionAsync: sendSwap, isPending: isSwapping } = useSendTransaction();
-  const [activeTxHash, setActiveTxHash] = useState<string | null>(null);
 
-  const { isLoading: isWaitingReceipt } = useWaitForTransactionReceipt({
-    hash: activeTxHash as `0x${string}` | undefined,
+  const [approvalHash, setApprovalHash] = useState<`0x${string}` | null>(null);
+  const [swapHash, setSwapHash] = useState<`0x${string}` | null>(null);
+
+  const approvalReceipt = useWaitForTransactionReceipt({
+    hash: approvalHash ?? undefined,
+    query: { enabled: Boolean(approvalHash) },
   });
+  const swapReceipt = useWaitForTransactionReceipt({
+    hash: swapHash ?? undefined,
+    query: { enabled: Boolean(swapHash) },
+  });
+
+  // Receipts land once; the refs stop the refetch below from re-triggering
+  // itself when the query object changes identity.
+  const settledApproval = useRef<string | null>(null);
+  useEffect(() => {
+    if (!approvalHash || !approvalReceipt.isSuccess) return;
+    if (settledApproval.current === approvalHash) return;
+    settledApproval.current = approvalHash;
+    void allowanceQuery.refetch();
+    toast.success(`${fromToken.symbol} approved`, { description: "You can send the swap now." });
+  }, [approvalHash, approvalReceipt.isSuccess, allowanceQuery, fromToken.symbol]);
+
+  const settledSwap = useRef<string | null>(null);
+  useEffect(() => {
+    if (!swapHash || !swapReceipt.isSuccess) return;
+    if (settledSwap.current === swapHash) return;
+    settledSwap.current = swapHash;
+    refetchBalances();
+    void quoteQuery.refetch();
+    toast.success("Swap confirmed", {
+      description: "Your balances are updating.",
+      action: {
+        label: "View on explorer",
+        onClick: () => window.open(explorerTxUrl(swapHash), "_blank"),
+      },
+    });
+  }, [swapHash, swapReceipt.isSuccess, refetchBalances, quoteQuery]);
+
+  const wrongNetwork = isConnected && chainId !== robinhoodChain.id;
+  const isBusy =
+    isApproving || isSwapping || approvalReceipt.isLoading || swapReceipt.isLoading || isSwitching;
 
   const selectFrom = (symbol: string) => {
     if (symbol === toSymbol) setToSymbol(fromSymbol);
@@ -395,69 +435,45 @@ function TradePage() {
   };
 
   const handleApprove = async () => {
-    if (!address) return;
+    if (!spender) return;
     try {
-      const approveAmount = parseUnits("1000000000", fromToken.decimals);
       const hash = await writeApprove({
         address: fromToken.address,
         abi: erc20Abi,
         functionName: "approve",
-        args: [swapSpender as `0x${string}`, approveAmount],
+        args: [spender, parseUnits("1000000000", fromToken.decimals)],
+        chainId: robinhoodChain.id,
       });
-      toast.info("Approval submitted...", { description: `Tx: ${hash.slice(0, 10)}...` });
-      setActiveTxHash(hash);
-      setTimeout(() => {
-        refetchAllowance();
-        toast.success(`Approved ${fromToken.symbol} for trading!`);
-      }, 4000);
-    } catch (err: any) {
-      toast.error("Approval failed", { description: err.shortMessage || err.message });
+      setApprovalHash(hash);
+      toast.info(`Approving ${fromToken.symbol}…`, { description: "Waiting for confirmation." });
+    } catch (err) {
+      toast.error("Approval failed", { description: txErrorMessage(err) });
     }
   };
 
-  const handleExecuteTrade = async () => {
-    if (!isConnected) {
-      toast.error("Please connect your wallet first");
+  const handleSwap = async () => {
+    const data = swapStep?.items?.[0]?.data;
+    if (!data) {
+      toast.error("No executable route for this pair right now");
       return;
     }
-    if (chainId !== robinhoodChain.id) {
-      switchChain({ chainId: robinhoodChain.id });
-      return;
-    }
-    if (!quote || !quoteSteps || quoteSteps.length === 0) {
-      toast.error("No executable swap step available for this pair");
-      return;
-    }
-
     try {
-      const swapStep = quoteSteps.find((s: any) => s.id === "swap" || s.id === "transfer") || quoteSteps[0];
-      const itemData = swapStep?.items?.[0]?.data;
-
-      if (!itemData) {
-        toast.error("Invalid swap transaction calldata");
-        return;
-      }
-
-      const txHash = await sendSwap({
-        to: itemData.to,
-        data: itemData.data,
-        value: BigInt(itemData.value || "0"),
+      const hash = await sendSwap({
+        to: data.to,
+        data: data.data,
+        value: BigInt(data.value ?? "0"),
+        chainId: robinhoodChain.id,
       });
-
-      setActiveTxHash(txHash);
-      toast.success("Trade broadcasted to Robinhood Chain!", {
-        description: `Swapped ${amountIn} ${fromToken.symbol} → ${quote.amountOutFormatted} ${toToken.symbol}`,
+      setSwapHash(hash);
+      toast.success("Trade broadcast", {
+        description: `${amountIn} ${fromToken.symbol} → ${formatOut(quote?.amountOutFormatted)} ${toToken.symbol}`,
         action: {
-          label: "View Explorer",
-          onClick: () => window.open(explorerTxUrl(txHash), "_blank"),
+          label: "View on explorer",
+          onClick: () => window.open(explorerTxUrl(hash), "_blank"),
         },
       });
-
-      setTimeout(() => {
-        refetchBalances();
-      }, 5000);
-    } catch (err: any) {
-      toast.error("Trade failed", { description: err.shortMessage || err.message });
+    } catch (err) {
+      toast.error("Trade failed", { description: txErrorMessage(err) });
     }
   };
 
@@ -938,3 +954,14 @@ function TokenSelector({
   );
 }
 
+/* ── Errors ─────────────────────────────────────────────────────────────── */
+
+/** Wallet/viem errors carry a `shortMessage`; user rejections get their own copy. */
+function txErrorMessage(err: unknown): string {
+  const short = (err as { shortMessage?: string })?.shortMessage;
+  const message = short ?? (err instanceof Error ? err.message : String(err));
+  if (/user rejected|denied|rejected the request/i.test(message)) {
+    return "You rejected the request in your wallet.";
+  }
+  return message;
+}
