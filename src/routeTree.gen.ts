@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as RoadmapRouteImport } from './routes/roadmap'
+import { Route as TradeRouteImport } from './routes/trade'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as PayTargetRouteImport } from './routes/pay.$target'
 
@@ -36,6 +37,11 @@ const RoadmapRoute = RoadmapRouteImport.update({
   path: '/roadmap',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TradeRoute = TradeRouteImport.update({
+  id: '/trade',
+  path: '/trade',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthCallbackRoute = AuthCallbackRouteImport.update({
   id: '/auth/callback',
   path: '/auth/callback',
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
   '/roadmap': typeof RoadmapRoute
+  '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/pay/$target': typeof PayTargetRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
   '/roadmap': typeof RoadmapRoute
+  '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/pay/$target': typeof PayTargetRoute
 }
@@ -69,22 +77,36 @@ export interface FileRoutesById {
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
   '/roadmap': typeof RoadmapRoute
+  '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/pay/$target': typeof PayTargetRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/app' | '/dashboard' | '/roadmap' | '/auth/callback' | '/pay/$target'
+    | '/'
+    | '/app'
+    | '/dashboard'
+    | '/roadmap'
+    | '/trade'
+    | '/auth/callback'
+    | '/pay/$target'
   fileRoutesByTo: FileRoutesByTo
   to:
-    '/' | '/app' | '/dashboard' | '/roadmap' | '/auth/callback' | '/pay/$target'
+    | '/'
+    | '/app'
+    | '/dashboard'
+    | '/roadmap'
+    | '/trade'
+    | '/auth/callback'
+    | '/pay/$target'
   id:
     | '__root__'
     | '/'
     | '/app'
     | '/dashboard'
     | '/roadmap'
+    | '/trade'
     | '/auth/callback'
     | '/pay/$target'
   fileRoutesById: FileRoutesById
@@ -94,6 +116,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRoute
   DashboardRoute: typeof DashboardRoute
   RoadmapRoute: typeof RoadmapRoute
+  TradeRoute: typeof TradeRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   PayTargetRoute: typeof PayTargetRoute
 }
@@ -128,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RoadmapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/trade': {
+      id: '/trade'
+      path: '/trade'
+      fullPath: '/trade'
+      preLoaderRoute: typeof TradeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/callback': {
       id: '/auth/callback'
       path: '/auth/callback'
@@ -150,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRoute,
   DashboardRoute: DashboardRoute,
   RoadmapRoute: RoadmapRoute,
+  TradeRoute: TradeRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   PayTargetRoute: PayTargetRoute,
 }

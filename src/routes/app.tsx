@@ -6,7 +6,7 @@
  * dashboard, in that order, with no way past the X step.
  */
 
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { useEffect, useMemo, useState } from "react";
 
@@ -105,6 +105,12 @@ function StudioPage() {
                     <XMark className="size-3" />@{xHandle}
                   </span>
                 ) : null}
+                <Link
+                  to="/trade"
+                  className="inline-flex items-center gap-1.5 rounded-full bg-ink px-3.5 py-1.5 text-[0.8rem] font-bold text-cream transition-all hover:bg-ink/80 hover:shadow-md"
+                >
+                  Trade RWAs ↗
+                </Link>
                 <button
                   type="button"
                   onClick={auth.signOut}

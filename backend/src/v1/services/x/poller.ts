@@ -29,7 +29,7 @@ const REPLY_TARGET_NOT_FOUND =
 const REPLY_UNSUPPORTED_HASHTAG_TOKEN =
   "That token isn't supported for hashtag payments yet. Try ETH instead, or send directly to a wallet or linked account.";
 const REPLY_SWAP_TOKEN_NOT_FOUND =
-  "Didn't recognize one of those tokens. Try a symbol like ETH, USDG, AAPL, NVDA, GOOGL, TSLA, AMZN, MSFT, META, COIN, or SPCX.";
+  "Unsupported asset. TagioFi only supports verified Robinhood Chain RWAs: SPCX, AAPL, NVDA, TSLA, GOOGL, AMZN, MSFT, META, COIN, USDG, and ETH.";
 const REPLY_SWAP_NO_ROUTE = "No liquidity route for that pair yet. Try a different amount or pair.";
 const REPLY_ALLOCATION_RESERVED =
   "That account hasn't linked TagioPay yet -- tap the link in my bio to review and sign the deposit. It's held in escrow for 120 days and unlocks automatically once they link.";
@@ -215,7 +215,7 @@ async function handleSwapCommand(
       priceImpactPct: plan.quote.priceImpactPct,
       requesterWallet,
     });
-    await msg.reply(REPLY_CREATED);
+    await msg.reply(`Trade prepared for ${swapCommand.amount} ${swapCommand.fromSymbol} -> ${swapCommand.toSymbol}. Review & sign: https://tagiopay.com/trade?id=${created.id}`);
   } else {
     log.info("x_bot_message_ignored", { ...ctx, reason: "duplicate_source_ref" });
   }

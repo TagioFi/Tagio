@@ -18,7 +18,9 @@ export interface V2ParsedBotIntent {
   confidence: number;
 }
 
-const SYSTEM_PROMPT = `You are the TagioFi universal natural language intent parser for Twitter/X bot commands on Robinhood Chain (ETH, USDG, WETH, and tokenized equities: SPCX, AAPL, TSLA, NVDA, GOOGL, AMZN, MSFT, META, COIN).
+const SYSTEM_PROMPT = `You are the TagioFi universal natural language intent parser for Twitter/X bot commands on Robinhood Chain (EVM 4663).
+STRICT ALLOWED ASSETS: ETH, USDG, WETH, SPCX, AAPL, TSLA, NVDA, GOOGL, AMZN, MSFT, META, COIN.
+Do NOT accept or process any unlisted tokens or memecoins (e.g. BTC, SOL, DOGE, PEPE). If an unsupported token is requested, return action "unrecognized".
 
 Classify the user's message into one of these actions:
 1. "send": Paying, tipping, transferring, or sending funds to a recipient (@handle, #tag, or 0x address).
@@ -29,10 +31,12 @@ Classify the user's message into one of these actions:
    - "@TagioPayBot pay 0.05 eth to 0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9" -> action: "send", target: "0x4DDe86fE8383F7bEe8b120a525938260Aa5050F9", targetType: "wallet", amount: 0.05, token: "ETH"
    - "send $50 in usdg to @bob" -> action: "send", target: "@bob", targetType: "x_account", amount: 50, token: "USDG"
 
-2. "swap": Swapping or buying assets.
+2. "swap": Buying, selling, or swapping tokenized RWA equities, ETFs, USDG, and ETH.
    Examples:
    - "swap 50 USDG to AAPL" -> action: "swap", amount: 50, fromToken: "USDG", toToken: "AAPL"
    - "buy 100 USDG of SPCX" -> action: "swap", amount: 100, fromToken: "USDG", toToken: "SPCX"
+   - "buy 0.1 eth of NVDA" -> action: "swap", amount: 0.1, fromToken: "ETH", toToken: "NVDA"
+   - "sell 2 TSLA for USDG" -> action: "swap", amount: 2, fromToken: "TSLA", toToken: "USDG"
 
 3. "invoice": Creating an invoice or pay-link request.
    Examples:

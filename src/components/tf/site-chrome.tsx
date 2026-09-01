@@ -14,6 +14,7 @@ import { cn } from "@/lib/utils";
 import { robinhoodExplorerUrl } from "@/lib/wagmi";
 
 const NAV_LINKS: Array<{ label: string; to: string; hash?: string }> = [
+  { label: "Trade", to: "/trade" },
   { label: "How it works", to: "/", hash: "how" },
   { label: "Assets", to: "/", hash: "assets" },
   { label: "Roadmap", to: "/roadmap" },
@@ -155,6 +156,7 @@ export function SiteFooter() {
           title="Product"
           links={[
             { label: "Settlement studio", href: "/app" },
+            { label: "Trade RWAs", href: "/trade" },
             { label: "Docs", href: "/site/docs.html" },
             { label: "Roadmap", href: "/roadmap" },
           ]}
