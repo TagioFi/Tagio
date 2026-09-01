@@ -225,6 +225,17 @@ function formatOut(value: string | undefined): string {
 /**
  * The transaction the user actually signs. `approve` is stripped: allowances
  * are handled separately so a wallet that is already approved skips straight
+ * to the swap.
+ */
+function findSwapStep(steps: V2QuoteStep[] | undefined): V2QuoteStep | undefined {
+  if (!steps?.length) return undefined;
+  const byId =
+    steps.find((step) => step.id === "swap") ?? steps.find((step) => step.id === "transfer");
+  if (byId) return byId;
+  const executable = steps.filter((step) => step.id !== "approve" && step.items?.[0]?.data?.to);
+  return executable[executable.length - 1];
+}
+
 /* ── Token registry ─────────────────────────────────────────────────────── */
 
 /**
@@ -322,30 +333,30 @@ function TradePage() {
     userWallet: address,
   });
 
-  // Check allowance for ERC20
-  const quoteSteps = (quote?.steps as any[]) || [];
-  const swapSpender = quoteSteps[0]?.items?.[0]?.data?.to || "0x0000000000000000000000000000000000000002";
-  const { data: allowanceData, refetch: refetchAllowance } = useReadContracts({
-    contracts: [
-      {
-        address: fromToken.address,
-        abi: erc20Abi,
-        functionName: "allowance",
-        args: [address || "0x0000000000000000000000000000000000000000", swapSpender as `0x${string}`],
-      },
-    ],
+  /* ── Allowance ── */
+
+  const swapStep = findSwapStep(quote?.steps);
+  const spender = swapStep?.items?.[0]?.data?.to;
+  // A same-asset settle comes back as a plain ERC20 `transfer` the user sends
+  // from their own balance — there is no router to approve.
+  const needsAllowance = Boolean(spender) && swapStep?.id !== "transfer" && !fromToken.isNative;
+
+  const allowanceQuery = useReadContract({
+    address: fromToken.address,
+    abi: erc20Abi,
+    functionName: "allowance",
+    args: address && spender ? [address, spender] : undefined,
+    chainId: robinhoodChain.id,
+    query: { enabled: Boolean(address && needsAllowance) },
   });
 
   const needsApproval = useMemo(() => {
-    if (fromToken.isNative) return false;
-    if (!amountIn || isNaN(Number(amountIn)) || Number(amountIn) <= 0) return false;
-    if (!allowanceData?.[0]?.result) return true;
-    const required = parseUnits(amountIn, fromToken.decimals);
-    const allowed = allowanceData[0].result as bigint;
-    return allowed < required;
-  }, [fromToken, amountIn, allowanceData]);
+    if (!needsAllowance || amountInBaseUnits === 0n) return false;
+    const allowance = allowanceQuery.data;
+    if (allowance === undefined) return false; // unknown yet — don't flash "Approve"
+    return allowance < amountInBaseUnits;
+  }, [needsAllowance, amountInBaseUnits, allowanceQuery.data]);
 
-  // Actions
   const { writeContractAsync: writeApprove, isPending: isApproving } = useWriteContract();
   const { sendTransactionAsync: sendSwap, isPending: isSwapping } = useSendTransaction();
   const [activeTxHash, setActiveTxHash] = useState<string | null>(null);
