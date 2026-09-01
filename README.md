@@ -1,86 +1,199 @@
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
-![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)
-![Vite](https://img.shields.io/badge/Vite-TanStack_Start-646CFF?logo=vite&logoColor=white)
-![Foundry](https://img.shields.io/badge/Foundry-Solidity-black?logo=ethereum&logoColor=white)
+<div align="center">
 
-# TagioPay
+# 🏷️ TagioFi (TagioPay)
 
-TagioPay replaces cryptographic hex wallet addresses with human-readable, programmable
-onchain `#hashtag` handles. A hashtag resolves to a payment destination, a set of
-payout splits, and linked social identities — all enforced onchain, on **Robinhood
-Chain** (EVM L2, Arbitrum Nitro stack).
+### Non-Custodial Receive-Side Settlement Protocol on Robinhood Chain
 
-This is the Robinhood Chain rebuild of the hashtag identity product previously shipped
-as QPay Hashtag on Solana and Base. QPay Cards (crypto → gift cards) is a related but
-separate sibling product and is not part of this repo.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.x-000000?logo=bun&logoColor=white)](https://bun.sh/)
+[![Vite](https://img.shields.io/badge/Vite-TanStack_Start-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
+[![Foundry](https://img.shields.io/badge/Foundry-Solidity-black?logo=ethereum&logoColor=white)](https://getfoundry.sh/)
+[![Robinhood Chain](https://img.shields.io/badge/Network-Robinhood_Chain_(4663)-00C805)](https://robinhood.com/)
+[![Groq](https://img.shields.io/badge/AI_Engine-Groq_LPU-F55036)](https://groq.com/)
 
-## Core features
+<p align="center">
+  <strong>Your tag knows what you want to be paid in.</strong><br/>
+  Set your receive-mix once. Inbound payments in ETH or USDG settle atomically into the assets you actually keep — tokenized equities, ETFs, metals, or stables — in a single signature on Robinhood Chain.
+</p>
+
+[**Launch Settlement Studio**](https://tagiopay.com/app) · [**Explore Roadmap**](https://tagiopay.com/roadmap) · [**Read Docs**](https://tagiopay.com/site/docs.html) · [**Follow on X**](https://x.com/tagiofi)
+
+---
+
+</div>
+
+## 🌟 Key Features
 
 | Feature | Description |
 | :--- | :--- |
-| Hashtag registry | One NFT per hashtag, subscription-based (annual renewal + grace period), lowercase `[a-z0-9_]{3,32}` namespace |
-| Programmable payouts | Register a split of wallets (basis points, must sum to 10000) — every payment to the hashtag fans out automatically |
-| Social binding | Link Twitter/X, Telegram, Discord handles via a signed-message verification handshake |
-| Recovery phrase | Hashtag ownership can be recovered via a pre-committed recovery phrase hash, independent of the original wallet |
-| Fast resolution | `GET /hashtags/resolve/:hashtag` — Redis-cached (60s), sub-50ms target for payment routing and social bots |
+| **🏷️ Programmable Tag Registry** | Human-readable handles (`@handle` / `#tag`) registered onchain with verified Twitter/X OAuth identities. |
+| **⚡ Atomic Receive-Side Settlement** | Senders pay in whatever they hold (ETH/USDG); receivers automatically receive their elected asset mix (up to 8 assets totaling 100%). |
+| **🤖 Universal Groq AI Bot (`@TagioPayBot`)** | Natural language intent parser running `qwen/qwen3.8-27b` on Groq LPUs with sub-100ms inference for tips, payments, invoices, and escrows. |
+| **🔗 1-Click Pay-Links & Dynamic Invoices** | Shareable payment URLs (`/pay/:handle` & `/pay/:invoiceId`), QR receipts, and merchant checkout. |
+| **👥 Multi-Member Split Tags** | Group tags that fan out incoming revenue to multiple collaborators according to basis points, each paid in their own custom mix. |
+| **💼 RosterVault Scheduled Payroll** | Smart contract automated payroll disbursements for DAOs, product teams, and businesses. |
+| **💎 Sustainable Fee Economics ($TGIO)** | 100% free same-asset fast path; bounded 0.15% conversion fee routing **80% to $TGIO buybacks**, **10% to stakers**, **5% to treasury**, and **5% to core protocol**. |
 
-## How it works
+---
 
-1. Owner registers a hashtag onchain (mints an NFT, pays a registration fee in the settlement token).
-2. Owner configures payout splits and social links via the resolver contract.
-3. Anyone pays `#hashtag` — the resolver contract splits the payment across the configured wallets in one transaction.
-4. The frontend calls `POST /hashtags/confirm-transaction` after every onchain action; the backend decodes the resolver's event logs and syncs Postgres.
+## 🏗️ Architecture & How It Works
 
-## Repo structure
-
+```mermaid
+flowchart LR
+    Sender([Sender / Payer]) -->|Sends ETH or USDG| PayScreen[Pay Page / Bot Mention]
+    PayScreen -->|Single Signature| Router[TagioFi Settlement Router]
+    Router -->|Uniswap V3 Atomic Swaps| LiquidityPools[(Robinhood Chain Dex Pools)]
+    LiquidityPools -->|Elected Asset Mix| Receiver([Receiver Wallet])
+    
+    subgraph Receiver Portfolio Mix
+        A[60% SPCX]
+        B[30% USDG]
+        C[10% NVDA]
+    end
+    
+    Receiver --> ReceiverPortfolio[Lands Converted in Wallet]
 ```
-/                 Vite + TanStack Start frontend (owned by a separate frontend developer)
-/backend          Bun + Express + Postgres API
-/contracts        Foundry — HashtagResolver + HashtagNFT (Solidity)
-/technical-docs   Product/PRD documents
-FRONTEND-INTEGRATION.md   API + ABI handoff doc for the frontend developer
+
+1. **Tag & Mix Configuration**: A creator or business registers `@handle` and selects their desired receive portfolio (e.g. 60% SPCX, 30% USDG, 10% NVDA).
+2. **Inbound Payment**: A payer sends funds via direct payment link (`tagiopay.com/pay/vlad`), invoice (`/pay/inv_...`), or Twitter mention (`@TagioPayBot send @vlad 50 usdg`).
+3. **Atomic Execution**: The settlement router quotes the optimal Uniswap V3 swap paths on Robinhood Chain, applies slippage bounds, and settles the payment into the receiver's portfolio in **one atomic transaction**. Zero balances are ever custodied.
+
+---
+
+## 📁 Repository Structure
+
+```text
+tagiopay/
+├── src/                  # Frontend: Vite + TanStack Start/Router + Tailwind CSS v4 + Wagmi
+│   ├── components/       # UI Components (Studio, AllocationBar, SpotlightCard, AuthGate)
+│   ├── hooks/            # TanStack Query & Wagmi Hooks (useTagioV2, useTagioAuth)
+│   ├── routes/           # File-based Routes (/, /app, /roadmap, /pay/$target, /auth/callback)
+│   └── types/            # TypeScript Domain Models & Contract Interfaces
+│
+├── backend/              # Backend: Bun + Express + PostgreSQL + Redis
+│   ├── src/v2/           # V2 API (Handles, Elections, Invoices, Groq AI Intent Parser)
+│   ├── src/v1/           # V1 Bot Engine (X Mentions Poller, DM Poller, Tx Builders)
+│   └── db/migrations/    # PostgreSQL Schema Migrations (001 - 014)
+│
+├── contracts/            # Smart Contracts: Foundry (Solidity 0.8.24)
+│   ├── src/              # HashtagResolver, HashtagNFT, SimpleEscrow, ClaimEscrow, BatchDisperser
+│   └── test/             # Comprehensive Foundry Unit & Fuzz Tests
+│
+├── scripts/              # Automation & Multi-Repo Synchronization Utilities
+│   └── sync-public.py    # Byte-exact author rewriting for open-source repository
+│
+└── technical-docs/       # Internal Product Specs, PRDs, & Architecture Guides (untracked)
 ```
 
-## Getting started
+---
 
-### Backend
+## 🚀 Quick Start
+
+### Prerequisites
+- [Bun](https://bun.sh/) `v1.3+`
+- [Node.js](https://nodejs.org/) `v20+`
+- [Foundry](https://getfoundry.sh/) (for smart contract tests)
+- PostgreSQL & Redis (for backend services)
+
+---
+
+### 1. Frontend Development
+
+```bash
+# Install dependencies
+bun install
+
+# Start local development server
+bun dev
+
+# Run typechecks and production build
+bun run check
+bun run build
+```
+
+---
+
+### 2. Backend Development
+
 ```bash
 cd backend
-bun install
-cp .env.example .env   # fill in DATABASE_URL, ROBINHOOD_RPC_URL, contract addresses
-bun run check           # typecheck
-bun test                # unit tests
-bun dev                  # local dev server (needs real Postgres + RPC)
-```
 
-### Contracts
-```bash
-cd contracts
-forge install
-forge build
-forge test
-```
-
-### Frontend
-```bash
+# Install backend dependencies
 bun install
+
+# Configure environment variables
 cp .env.example .env
-bun run check   # typecheck
+
+# Run database migrations
+bun run migrate
+
+# Run unit tests
+bun test
+
+# Start backend server
 bun dev
 ```
 
-## Roadmap
+---
 
-- [x] HashtagResolver + HashtagNFT contracts (Foundry, tested — NFT-sourced ownership, reclaim-on-expiry, pausable payments)
-- [x] Backend scaffold (Postgres schema, event-sync service, resolve/auth/transactions routes)
-- [x] Frontend merged in from its own repo (Vite + TanStack Start + shadcn dashboard, built via Lovable)
-- [x] Deploy contracts to Robinhood Chain mainnet — see `SECURITY.md` for live addresses
-- [x] Backend deployed, live at `api.tagiopay.com`
-- [ ] Wire resolver/NFT addresses into the deployed backend's env (still points to no contract)
-- [ ] Wire frontend to the live backend API (`VITE_API_URL`) — not yet connected
-- [ ] Social verification bot layer (Telegram/X)
+### 3. Smart Contracts (Foundry)
 
-## Tech stack
+```bash
+cd contracts
 
-Vite · TanStack Start/Router · React 19 · Tailwind · shadcn/Radix · Bun · Express · PostgreSQL · viem · Foundry/Solidity · Robinhood Chain (EVM L2)
+# Install Foundry dependencies
+forge install
+
+# Build contracts
+forge build
+
+# Run unit and fuzz test suite
+forge test -vvv
+```
+
+---
+
+## 🌐 Network & Deployed Contracts
+
+| Parameter | Value |
+| :--- | :--- |
+| **Network** | Robinhood Chain Mainnet |
+| **Chain ID** | `4663` |
+| **Currency** | `ETH` |
+| **Explorer** | [explorer.robinhood.com](https://explorer.robinhood.com) |
+| **Native Stablecoin** | `USDG` (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) |
+| **Supported RWA Equities** | `SPCX`, `AAPL`, `NVDA`, `TSLA`, `GOOGL`, `AMZN`, `MSFT`, `META`, `COIN` |
+
+---
+
+## 🔄 Dual-Repository Synchronization
+
+TagioFi operates a synchronized multi-remote setup:
+* **Private Production Repo** (`notadeveloper7/tagiopay`): Connected to deployment pipelines and Lovable sync.
+* **Public Open-Source Repo** (`TagioFi/Tagio`): Public release repository with all commits cleanly attributed to `TagioFi <tagiofi@outlook.com>`.
+
+```bash
+# Push to production repository
+bun run push:origin
+
+# Push to public open-source repository (with automated author rewrite)
+bun run push:public
+
+# Push to both repositories simultaneously
+bun run push:all
+```
+
+---
+
+## 🛡️ Security & Disclosures
+
+* **Non-Custodial Guarantee**: Smart contracts never take custody of funds. All routing occurs atomically within single-transaction execution boundaries.
+* **Slippage & Price Sanity**: Leg-level slippage bounds and price sanity checks protect each conversion. If an asset experiences liquidity constraints, it safe-settles into USDG with an onchain event log.
+* **Security Disclosures**: Please see [`SECURITY.md`](./SECURITY.md) for our vulnerability reporting policy and bug bounty details.
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License** — see the [`LICENSE`](./LICENSE) file for details.
