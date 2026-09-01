@@ -8,7 +8,7 @@ import {
 import { config } from "../config";
 import { getPublicClient } from "../v1/services/onchain/client";
 import { resolveToken } from "./rwaTokens";
-import { encodeWethPath, quoteSwap, type SwapQuote, type SwapRouting } from "./uniswapV3";
+import { encodeWethPath, quoteSwap, type SwapQuote, type SwapRouting } from "./uniswap";
 
 // Non-custodial by design: this module only ever builds unsigned transaction
 // calldata. The user's own wallet signs and broadcasts it -- this backend
