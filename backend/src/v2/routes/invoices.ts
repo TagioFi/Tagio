@@ -122,10 +122,14 @@ router.get("/v2/pending/wallet/:walletAddress", async (req, res, next) => {
 router.get("/v2/pending/tx/:id", async (req, res, next) => {
   try {
     const rawId = req.params.id.replace(/^pnd_/, "");
-    const { rows } = await pool.query(
-      "SELECT * FROM pending_transactions WHERE id = $1 OR source_ref = $1 LIMIT 1",
-      [rawId]
-    );
+    let queryText = "SELECT * FROM pending_transactions WHERE source_ref = $1 LIMIT 1";
+    let queryParams: any[] = [rawId];
+    if (/^\d+$/.test(rawId)) {
+      queryText = "SELECT * FROM pending_transactions WHERE id = $1 OR source_ref = $2 LIMIT 1";
+      queryParams = [parseInt(rawId, 10), rawId];
+    }
+
+    const { rows } = await pool.query(queryText, queryParams);
     if (rows.length === 0) {
       res.status(404).json({ error: "Pending transaction not found" });
       return;

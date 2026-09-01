@@ -180,13 +180,15 @@ function PayPage() {
   }
 
   const profile = handleQuery.data;
+  const displayHandle = profile?.handle || handle || (isPendingTx ? pendingTx?.handleDetails?.handle || pendingTx?.transaction?.target_value?.replace(/^[@#]/, "") : "") || target;
 
   return (
     <PageShell>
       <SpotlightBackground />
-      <section className="relative overflow-hidden px-6 pb-24 pt-36">
-        <Aurora className="opacity-50" />
-        <div className="relative z-10 mx-auto grid max-w-5xl gap-4 lg:grid-cols-[1fr_1.15fr]">
+      <Aurora />
+
+      <section className="relative mx-auto max-w-5xl px-6 py-20">
+        <div className="grid gap-8 lg:grid-cols-2">
           {/* ── Recipient ─────────────────────────────────────────────── */}
           <SpotlightCard className="p-8">
             <div className="flex items-center gap-4">
@@ -195,13 +197,13 @@ function PayPage() {
                   <img src={profile.avatarUrl} alt="" className="size-full object-cover" />
                 ) : (
                   <span className="text-lg font-extrabold text-ink/50">
-                    {profile?.handle.slice(0, 2).toUpperCase()}
+                    {displayHandle.slice(0, 2).toUpperCase()}
                   </span>
                 )}
               </div>
               <div className="min-w-0">
                 <h1 className="truncate text-2xl font-extrabold tracking-[-0.03em] text-ink">
-                  @{profile?.handle}
+                  @{displayHandle}
                 </h1>
                 {profile?.displayName ? (
                   <p className="truncate text-sm text-ink/55">{profile.displayName}</p>
@@ -214,7 +216,7 @@ function PayPage() {
             ) : null}
 
             <p className="mt-5 font-mono text-xs text-ink/40">
-              {shortAddress(profile?.ownerWallet)}
+              {shortAddress(profile?.ownerWallet || pendingTx?.transaction?.resolved_to_wallet)}
             </p>
 
             <div className="mt-7">
@@ -380,7 +382,7 @@ function PayPage() {
                   ? "Switch to Robinhood Chain"
                   : isSettling
                     ? (status ?? "Settling…")
-                    : `Pay @${profile?.handle}`}
+                    : `Pay @${displayHandle}`}
             </button>
 
             {error ? <p className="mt-3 text-sm text-destructive">{error}</p> : null}
