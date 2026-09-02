@@ -252,6 +252,16 @@ function StudioPage() {
                       </li>
                     ))}
                   </ul>
+
+                  <div className="mt-4 border-t border-ink/10 pt-3">
+                    <Link
+                      to="/nfts"
+                      className="flex items-center justify-between rounded-xl px-2 py-1.5 text-xs font-semibold text-ink/60 transition-colors hover:bg-ink/5 hover:text-ink"
+                    >
+                      <span>🖼️ Transfer NFTs & Tags</span>
+                      <span className="font-mono text-lime-deep">↗</span>
+                    </Link>
+                  </div>
                 </SpotlightCard>
 
                 <ClaimTagCard
@@ -757,14 +767,25 @@ function ElectionEditor({ handle, ownerWallet }: { handle: string; ownerWallet: 
           </p>
         </div>
 
-        <span
-          className={cn(
-            "tf-numeric rounded-full px-3.5 py-1.5 text-sm font-bold transition-colors",
-            balanced ? "bg-lime/40 text-ink" : "bg-destructive/10 text-destructive",
-          )}
-        >
-          {(total / 100).toFixed(2)}%
-        </span>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/nfts"
+            search={{ tag: handle }}
+            className="inline-flex items-center gap-1.5 rounded-full border border-ink/15 bg-cream px-3 py-1.5 text-xs font-bold text-ink transition-colors hover:bg-ink hover:text-cream"
+            title="Transfer ownership of this tag's NFT to another handle or wallet"
+          >
+            <span>🏷️ Transfer Tag</span>
+            <span className="text-lime-deep font-mono">↗</span>
+          </Link>
+          <span
+            className={cn(
+              "tf-numeric rounded-full px-3.5 py-1.5 text-sm font-bold transition-colors",
+              balanced ? "bg-lime/40 text-ink" : "bg-destructive/10 text-destructive",
+            )}
+          >
+            {(total / 100).toFixed(2)}%
+          </span>
+        </div>
       </div>
 
       {rows.length ? <AllocationBar legs={rows} className="mt-6" /> : null}

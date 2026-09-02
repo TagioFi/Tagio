@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as FacebookRouteImport } from './routes/facebook'
+import { Route as NftsRouteImport } from './routes/nfts'
 import { Route as RoadmapRouteImport } from './routes/roadmap'
 import { Route as TradeRouteImport } from './routes/trade'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -36,6 +37,11 @@ const DashboardRoute = DashboardRouteImport.update({
 const FacebookRoute = FacebookRouteImport.update({
   id: '/facebook',
   path: '/facebook',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NftsRoute = NftsRouteImport.update({
+  id: '/nfts',
+  path: '/nfts',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoadmapRoute = RoadmapRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
   '/facebook': typeof FacebookRoute
+  '/nfts': typeof NftsRoute
   '/roadmap': typeof RoadmapRoute
   '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
   '/facebook': typeof FacebookRoute
+  '/nfts': typeof NftsRoute
   '/roadmap': typeof RoadmapRoute
   '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
   '/facebook': typeof FacebookRoute
+  '/nfts': typeof NftsRoute
   '/roadmap': typeof RoadmapRoute
   '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/dashboard'
     | '/facebook'
+    | '/nfts'
     | '/roadmap'
     | '/trade'
     | '/auth/callback'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/dashboard'
     | '/facebook'
+    | '/nfts'
     | '/roadmap'
     | '/trade'
     | '/auth/callback'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/app'
     | '/dashboard'
     | '/facebook'
+    | '/nfts'
     | '/roadmap'
     | '/trade'
     | '/auth/callback'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRoute
   DashboardRoute: typeof DashboardRoute
   FacebookRoute: typeof FacebookRoute
+  NftsRoute: typeof NftsRoute
   RoadmapRoute: typeof RoadmapRoute
   TradeRoute: typeof TradeRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -162,6 +175,13 @@ declare module '@tanstack/react-router' {
       path: '/facebook'
       fullPath: '/facebook'
       preLoaderRoute: typeof FacebookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/nfts': {
+      id: '/nfts'
+      path: '/nfts'
+      fullPath: '/nfts'
+      preLoaderRoute: typeof NftsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/roadmap': {
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRoute,
   DashboardRoute: DashboardRoute,
   FacebookRoute: FacebookRoute,
+  NftsRoute: NftsRoute,
   RoadmapRoute: RoadmapRoute,
   TradeRoute: TradeRoute,
   AuthCallbackRoute: AuthCallbackRoute,
