@@ -32,7 +32,6 @@ function LandingPage() {
       <HowItWorks />
       <FeaturedAssets />
       <IntentDemo />
-      <ContractAddressBanner />
       <ClosingCta />
     </PageShell>
   );
@@ -67,8 +66,43 @@ function Hero() {
           arrives converted into the assets you actually keep, atomically, in a single signature.
         </p>
 
+        {/* Contract Address Pill */}
         <div
-          className="tf-rise mt-10 flex w-full justify-center"
+          className="tf-rise mt-5 flex items-center justify-center"
+          style={{ animationDelay: "240ms" }}
+        >
+          <div className="flex items-center gap-2 rounded-full border border-ink/15 bg-cream/90 px-3.5 py-1.5 shadow-sm backdrop-blur transition-all hover:border-ink/30">
+            <span className="font-mono text-[11px] font-bold uppercase tracking-wider text-ink/45">
+              CA:
+            </span>
+            <span className="font-mono text-xs font-semibold text-ink">
+              0x0866...7da8
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText("0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8");
+                toast.success("Contract address copied!");
+              }}
+              className="rounded-full bg-ink/5 p-1 text-xs text-ink/60 transition-colors hover:bg-ink hover:text-cream active:scale-95"
+              title="Copy full contract address"
+            >
+              📋
+            </button>
+            <a
+              href="https://robinhoodchain.blockscout.com/token/0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8"
+              target="_blank"
+              rel="noreferrer"
+              className="p-1 text-xs text-ink/40 transition-colors hover:text-ink"
+              title="View on Robinhood Blockscout"
+            >
+              ↗
+            </a>
+          </div>
+        </div>
+
+        <div
+          className="tf-rise mt-8 flex w-full justify-center"
           style={{ animationDelay: "280ms" }}
         >
           <TagResolver />
@@ -259,66 +293,6 @@ function ClosingCta() {
             </a>
           </div>
         </div>
-      </div>
-    </section>
-  );
-}
-
-function ContractAddressBanner() {
-  const [copied, setCopied] = useState(false);
-  const ca = "0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8";
-
-  const handleCopy = () => {
-    navigator.clipboard.writeText(ca);
-    setCopied(true);
-    toast.success("Contract address copied to clipboard!");
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <section className="relative px-6 py-10">
-      <div className="mx-auto max-w-4xl">
-        <SpotlightCard className="p-6 md:p-8">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-lime/20 font-mono text-xs font-black text-lime-deep shadow-inner">
-                CA
-              </span>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold uppercase tracking-wider text-ink/45">
-                    Official Token Contract
-                  </span>
-                  <span className="rounded-full bg-lime/20 px-2 py-0.5 font-mono text-[10px] font-bold text-lime-deep">
-                    Robinhood Chain (4663)
-                  </span>
-                </div>
-                <div className="mt-1 font-mono text-xs font-semibold text-ink sm:text-sm break-all">
-                  {ca}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2.5 shrink-0">
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="flex items-center gap-1.5 rounded-full bg-ink px-4 py-2 text-xs font-bold text-cream transition-all hover:bg-ink/80 hover:shadow-md active:scale-95"
-              >
-                {copied ? "✓ Copied" : "Copy Address"}
-              </button>
-              <a
-                href={`https://robinhoodchain.blockscout.com/token/${ca}`}
-                target="_blank"
-                rel="noreferrer"
-                className="flex size-8 items-center justify-center rounded-full border border-ink/15 bg-cream text-xs font-bold text-ink transition-colors hover:bg-cream-deep"
-                title="View on Robinhood Blockscout"
-              >
-                ↗
-              </a>
-            </div>
-          </div>
-        </SpotlightCard>
       </div>
     </section>
   );
