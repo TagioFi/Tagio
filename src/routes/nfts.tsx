@@ -244,13 +244,13 @@ function NftTransferPage() {
                   {/* Field 2: Token ID */}
                   <div>
                     <label className="block text-[11px] font-bold uppercase tracking-[0.14em] text-ink/45">
-                      Token ID
+                      Token ID (Decimal or Hex)
                     </label>
                     <input
                       type="text"
                       value={tokenId}
-                      onChange={(e) => setTokenId(e.target.value.replace(/[^0-9]/g, ""))}
-                      placeholder="e.g. 1"
+                      onChange={(e) => setTokenId(e.target.value.trim())}
+                      placeholder="e.g. 1 or 0x..."
                       className="mt-2 w-full rounded-2xl border border-ink/15 bg-cream/70 px-4 py-3.5 font-mono text-xs font-semibold text-ink placeholder:text-ink/30 transition-colors focus:border-ink focus:bg-cream focus:outline-none"
                     />
                   </div>
