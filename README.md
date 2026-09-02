@@ -11,6 +11,7 @@
 [![Foundry](https://img.shields.io/badge/Foundry-Solidity-black?logo=ethereum&logoColor=white)](https://getfoundry.sh/)
 [![Robinhood Chain](https://img.shields.io/badge/Network-Robinhood_Chain_(4663)-00C805)](https://robinhood.com/)
 [![Groq](https://img.shields.io/badge/AI_Engine-Groq_LPU-F55036)](https://groq.com/)
+[![X](https://img.shields.io/badge/X-@tagiofi-black?logo=x&logoColor=white)](https://x.com/tagiofi)
 
 <p align="center">
   <strong>Your tag knows what you want to be paid in.</strong><br/>
@@ -23,7 +24,7 @@
   <a href="https://robinhoodchain.blockscout.com/token/0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8">View on Robinhood Blockscout ↗</a>
 </p>
 
-[**Launch Settlement Studio**](https://tagiopay.com/app) · [**Explore Roadmap**](https://tagiopay.com/roadmap) · [**Read Docs**](https://tagiopay.com/site/docs.html) · [**Follow on X**](https://x.com/tagiofi)
+[**Launch Settlement Studio**](https://tagiopay.com/app) · [**Explore Roadmap**](https://tagiopay.com/roadmap) · [**Read Docs**](https://tagiopay.com/site/docs.html) · [**Follow on X (@tagiofi)**](https://x.com/tagiofi)
 
 ---
 
@@ -171,6 +172,16 @@ forge test -vvv
 | **Explorer** | [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com) |
 | **Native Stablecoin** | `USDG` (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) |
 | **Supported RWA Equities** | `SPCX`, `AAPL`, `NVDA`, `TSLA`, `GOOGL`, `AMZN`, `MSFT`, `META`, `COIN` |
+
+---
+
+## 🌐 Community & Official Links
+
+* **Official X / Twitter**: [@tagiofi](https://x.com/tagiofi) (`https://x.com/tagiofi`)
+* **TagioFi Bot on X**: [@TagioPayBot](https://x.com/TagioPayBot) (`https://x.com/TagioPayBot`)
+* **Settlement Studio**: [tagiopay.com](https://tagiopay.com)
+* **Facebook Bot Waitlist**: [tagiopay.com/facebook](https://tagiopay.com/facebook)
+* **Official Token ($TGIO)**: [`0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8`](https://robinhoodchain.blockscout.com/token/0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8)
 
 ---
 
