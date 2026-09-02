@@ -5,6 +5,7 @@
 
 import { Link, useRouterState } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 
 import { TagioMark } from "@/components/tf/brand";
 import { XMark } from "@/components/tf/auth-gate";
@@ -150,6 +151,32 @@ export function SiteFooter() {
             Your tag knows what you want to be paid in. Non-custodial receive-side settlement on
             Robinhood Chain.
           </p>
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs font-bold uppercase tracking-wider text-cream/40">
+              CA:
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                navigator.clipboard.writeText("0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8");
+                toast.success("Contract address copied!");
+              }}
+              className="group flex items-center gap-2 rounded-full border border-cream/15 bg-cream/5 px-3 py-1 font-mono text-xs text-cream/80 transition-colors hover:border-lime/50 hover:text-lime"
+              title="Click to copy contract address"
+            >
+              <span>0x0866...7da8</span>
+              <span className="text-[10px] text-cream/40 group-hover:text-lime">📋</span>
+            </button>
+            <a
+              href="https://robinhoodchain.blockscout.com/token/0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8"
+              target="_blank"
+              rel="noreferrer"
+              className="rounded-full border border-cream/15 p-1 text-xs text-cream/40 transition-colors hover:border-lime/50 hover:text-lime"
+              title="View on Robinhood Blockscout"
+            >
+              ↗
+            </a>
+          </div>
         </div>
 
         <FooterColumn
