@@ -48,8 +48,8 @@ export function collectSettlementSteps(quote: PortfolioSettlementQuoteResult): R
     const steps = (leg.quote?.steps ?? []) as RelayStep[];
     for (const step of steps) {
       for (const item of step.items ?? []) {
-        // Relay marks already-satisfied items (e.g. an existing approval).
-        if (item.status && item.status !== "incomplete") continue;
+        // Only skip items that are already completed/satisfied
+        if (item.status === "complete" || item.status === "success") continue;
         if (item.data?.to) txs.push(item.data);
       }
     }

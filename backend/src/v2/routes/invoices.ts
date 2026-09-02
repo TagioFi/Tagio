@@ -87,28 +87,37 @@ router.get("/v2/pending/wallet/:walletAddress", async (req, res, next) => {
     // Query pending_transactions where this wallet or their X handle is sender or recipient
     const { rows } = await pool.query(
       `SELECT 
-         id,
-         id as request_id,
-         requested_by_wallet,
-         requested_by_x_user_id,
-         target_type,
-         target_value,
-         resolved_to_wallet,
-         token,
-         amount,
-         status,
-         tweet_url,
-         created_at,
-         expires_at
-       FROM pending_transactions
-       WHERE status = 'pending'
+         pt.id,
+         pt.id as request_id,
+         pt.requested_by_wallet,
+         pt.requested_by_x_user_id,
+         pt.target_type,
+         pt.target_value,
+         pt.resolved_to_wallet,
+         pt.token,
+         pt.amount,
+         pt.status,
+         pt.tweet_url,
+         pt.kind,
+         pt.created_at,
+         pt.expires_at,
+         sender_id.x_handle as sender_x_handle,
+         CASE
+           WHEN LOWER(pt.requested_by_wallet) = $1 OR ($2 != '' AND LOWER(pt.requested_by_x_user_id) = $2) THEN true
+           ELSE false
+         END as is_sender
+       FROM pending_transactions pt
+       LEFT JOIN v2_wallet_identities sender_id 
+         ON LOWER(pt.requested_by_wallet) = LOWER(sender_id.wallet_address)
+            OR (pt.requested_by_x_user_id IS NOT NULL AND pt.requested_by_x_user_id = sender_id.x_user_id)
+       WHERE pt.status = 'pending'
          AND (
-           LOWER(requested_by_wallet) = $1
-           OR LOWER(resolved_to_wallet) = $1
-           OR ($2 != '' AND LOWER(requested_by_x_user_id) = $2)
-           OR ($3 != '' AND (LOWER(target_value) = LOWER($3) OR LOWER(target_value) = LOWER('@' || $3)))
+           LOWER(pt.requested_by_wallet) = $1
+           OR LOWER(pt.resolved_to_wallet) = $1
+           OR ($2 != '' AND LOWER(pt.requested_by_x_user_id) = $2)
+           OR ($3 != '' AND (LOWER(pt.target_value) = LOWER($3) OR LOWER(pt.target_value) = LOWER('@' || $3)))
          )
-       ORDER BY created_at DESC LIMIT 50`,
+       ORDER BY pt.created_at DESC LIMIT 50`,
       [wallet, xUserId, xHandle]
     );
 

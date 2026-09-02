@@ -72,12 +72,21 @@ function StudioPage() {
     !handlesQuery.isLoading &&
     !handles.some((item) => item.handle.toLowerCase() === xTag);
 
-  // Modal: Actionable pending transaction for this user. The listing aliases
-  // the row id to `request_id`, so key dismissals off whichever is present.
+  // Separate actionable outgoing transactions (sender signs) vs incoming notifications (receiver views)
   const pendingTxs = (pendingQuery.data ?? []).filter(
     (tx) => tx.status === "pending" && !dismissedPendingIds.includes(pendingTxKey(tx)),
   );
-  const activePendingTx = pendingTxs.length > 0 ? pendingTxs[0]! : null;
+
+  const actionablePendingTxs = pendingTxs.filter((tx) => {
+    if (tx.is_sender !== undefined) return tx.is_sender;
+    return Boolean(address && tx.requested_by_wallet?.toLowerCase() === address.toLowerCase());
+  });
+  const activePendingTx = actionablePendingTxs.length > 0 ? actionablePendingTxs[0]! : null;
+
+  const incomingPendingTxs = pendingTxs.filter((tx) => {
+    if (tx.is_sender !== undefined) return !tx.is_sender;
+    return Boolean(address && tx.requested_by_wallet?.toLowerCase() !== address.toLowerCase());
+  });
 
   const dismissPendingTx = (reqId: string) => {
     setDismissedPendingIds((prev) => [...prev, reqId]);
@@ -141,8 +150,60 @@ function StudioPage() {
               />
             ) : null}
 
+            {/* Receiver Read-Only Notification: Incoming Payments Waiting for Sender */}
+            {incomingPendingTxs.length > 0 ? (
+              <div className="mt-6 space-y-3">
+                {incomingPendingTxs.map((tx) => (
+                  <div
+                    key={pendingTxKey(tx)}
+                    className="flex flex-col gap-2 rounded-2xl border border-lime/40 bg-lime/10 p-4 text-xs sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="size-2 rounded-full bg-lime-deep animate-pulse" />
+                      <span className="text-ink/80">
+                        Incoming payment of{" "}
+                        <strong className="font-mono font-bold text-ink">
+                          {tx.amount} {tx.token?.toUpperCase()}
+                        </strong>{" "}
+                        from{" "}
+                        <strong className="text-ink">
+                          {tx.sender_x_handle
+                            ? `@${tx.sender_x_handle}`
+                            : shortAddress(tx.requested_by_wallet)}
+                        </strong>{" "}
+                        — waiting for sender to sign.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {tx.tweet_url ? (
+                        <a
+                          href={tx.tweet_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-semibold text-lime-deep underline hover:text-ink"
+                        >
+                          View on X ↗
+                        </a>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => dismissPendingTx(pendingTxKey(tx))}
+                        className="rounded-md px-1.5 py-0.5 text-xs font-semibold text-ink/40 hover:text-ink"
+                        title="Dismiss notification"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <div
-              className={cn("grid gap-6 lg:grid-cols-[300px_1fr]", showXClaim ? "mt-6" : "mt-12")}
+              className={cn(
+                "grid gap-6 lg:grid-cols-[300px_1fr]",
+                showXClaim || incomingPendingTxs.length > 0 ? "mt-6" : "mt-12",
+              )}
             >
               <div className="flex flex-col gap-4">
                 <SpotlightCard className="p-6">

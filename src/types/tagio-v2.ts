@@ -366,6 +366,8 @@ export interface V2PendingTxRow {
   price_impact_pct?: number | string | null;
   created_at?: string | null;
   expires_at?: string | null;
+  is_sender?: boolean;
+  sender_x_handle?: string | null;
 }
 
 export interface V2PendingTxResponse {
