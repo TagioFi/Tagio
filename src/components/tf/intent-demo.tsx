@@ -51,6 +51,21 @@ const DEMOS: Demo[] = [
     },
   },
   {
+    text: "@TagioPayBot buy 50 usdg of nvda",
+    intent: {
+      action: "swap",
+      target: null,
+      targetType: null,
+      amount: 50,
+      token: "USDG",
+      fromToken: "USDG",
+      toToken: "NVDA",
+      memo: null,
+      elections: null,
+      confidence: 0.99,
+    },
+  },
+  {
     text: "@TagioPayBot set my mix to 70 nvda 30 usdg",
     intent: {
       action: "election",
@@ -280,6 +295,9 @@ export function IntentDemo() {
                     intent.amount !== null ? `${intent.amount} ${intent.token ?? ""}`.trim() : "—"
                   }
                 />
+                {intent.fromToken && intent.toToken ? (
+                  <Row label="Pair" value={`${intent.fromToken} → ${intent.toToken}`} />
+                ) : null}
                 {intent.memo ? <Row label="Memo" value={intent.memo} /> : null}
                 {intent.elections?.length ? (
                   <Row

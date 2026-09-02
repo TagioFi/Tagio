@@ -221,7 +221,15 @@ export interface V2CreateInvoiceBody {
   memo?: string;
 }
 
-export type V2BotAction = "send" | "invoice" | "election" | "unrecognized";
+export type V2BotAction =
+  | "send"
+  | "swap"
+  | "invoice"
+  | "election"
+  | "escrow"
+  | "giveaway"
+  | "airdrop"
+  | "unrecognized";
 
 export interface V2ParsedBotIntent {
   action: V2BotAction;
@@ -229,6 +237,8 @@ export interface V2ParsedBotIntent {
   targetType: "x_account" | "hashtag" | "wallet" | null;
   amount: number | null;
   token: string | null;
+  fromToken?: string | null;
+  toToken?: string | null;
   memo: string | null;
   elections: V2ElectionInput[] | null;
   confidence: number;
