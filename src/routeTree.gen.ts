@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/app'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as FacebookRouteImport } from './routes/facebook'
 import { Route as RoadmapRouteImport } from './routes/roadmap'
 import { Route as TradeRouteImport } from './routes/trade'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -30,6 +31,11 @@ const AppRoute = AppRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FacebookRoute = FacebookRouteImport.update({
+  id: '/facebook',
+  path: '/facebook',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RoadmapRoute = RoadmapRouteImport.update({
@@ -57,6 +63,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
+  '/facebook': typeof FacebookRoute
   '/roadmap': typeof RoadmapRoute
   '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
+  '/facebook': typeof FacebookRoute
   '/roadmap': typeof RoadmapRoute
   '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/app': typeof AppRoute
   '/dashboard': typeof DashboardRoute
+  '/facebook': typeof FacebookRoute
   '/roadmap': typeof RoadmapRoute
   '/trade': typeof TradeRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/dashboard'
+    | '/facebook'
     | '/roadmap'
     | '/trade'
     | '/auth/callback'
@@ -96,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/dashboard'
+    | '/facebook'
     | '/roadmap'
     | '/trade'
     | '/auth/callback'
@@ -105,6 +116,7 @@ export interface FileRouteTypes {
     | '/'
     | '/app'
     | '/dashboard'
+    | '/facebook'
     | '/roadmap'
     | '/trade'
     | '/auth/callback'
@@ -115,6 +127,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppRoute: typeof AppRoute
   DashboardRoute: typeof DashboardRoute
+  FacebookRoute: typeof FacebookRoute
   RoadmapRoute: typeof RoadmapRoute
   TradeRoute: typeof TradeRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -142,6 +155,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/facebook': {
+      id: '/facebook'
+      path: '/facebook'
+      fullPath: '/facebook'
+      preLoaderRoute: typeof FacebookRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/roadmap': {
@@ -179,6 +199,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppRoute: AppRoute,
   DashboardRoute: DashboardRoute,
+  FacebookRoute: FacebookRoute,
   RoadmapRoute: RoadmapRoute,
   TradeRoute: TradeRoute,
   AuthCallbackRoute: AuthCallbackRoute,

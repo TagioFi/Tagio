@@ -184,6 +184,7 @@ export function SiteFooter() {
           links={[
             { label: "Settlement studio", href: "/app" },
             { label: "Trade RWAs", href: "/trade" },
+            { label: "Facebook Bot", href: "/facebook" },
             { label: "Docs", href: "/site/docs.html" },
             { label: "Roadmap", href: "/roadmap" },
           ]}
