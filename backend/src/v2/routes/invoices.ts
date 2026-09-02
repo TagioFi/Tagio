@@ -136,8 +136,9 @@ router.get("/v2/pending/tx/:id", async (req, res, next) => {
     }
 
     const tx = rows[0];
-    const targetClean = tx.target_value.replace(/^[@#]/, "");
-    const handleDetails = await getHandleDetails(targetClean);
+    const isSwap = tx.target_type === "swap" || tx.kind === "swap";
+    const targetClean = tx.target_value ? tx.target_value.replace(/^[@#]/, "") : "";
+    const handleDetails = isSwap ? null : await getHandleDetails(targetClean);
 
     res.json({
       transaction: tx,

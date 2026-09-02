@@ -215,7 +215,7 @@ async function handleSwapCommand(
       priceImpactPct: plan.quote.priceImpactPct,
       requesterWallet,
     });
-    await msg.reply(`Trade prepared for ${swapCommand.amount} ${swapCommand.fromSymbol} -> ${swapCommand.toSymbol}. Review & sign: https://tagiopay.com/trade?id=${created.id}`);
+    await msg.reply(REPLY_CREATED);
   } else {
     log.info("x_bot_message_ignored", { ...ctx, reason: "duplicate_source_ref" });
   }

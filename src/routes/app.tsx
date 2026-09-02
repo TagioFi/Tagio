@@ -242,37 +242,63 @@ function pendingTxKey(tx: V2PendingTxRow): string {
 }
 
 function PendingTxReviewModal({ tx, onDismiss }: { tx: V2PendingTxRow; onDismiss: () => void }) {
+  const isSwap = tx.kind === "swap" || tx.target_type === "swap";
+  const reviewUrl = isSwap ? `/trade?id=${pendingTxKey(tx)}` : `/pay/${pendingTxKey(tx)}`;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/45 p-4 backdrop-blur-sm animate-in fade-in duration-200">
       <SpotlightCard className="relative w-full max-w-md border-amber-500/40 p-8 shadow-2xl">
         <span className="tf-chip bg-amber-500/20 font-bold text-amber-900 dark:text-amber-300">
-          Action Required
+          {isSwap ? "Trade Confirmation" : "Action Required"}
         </span>
 
-        <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink">Pending Transaction</h2>
+        <h2 className="mt-4 text-2xl font-bold tracking-tight text-ink">
+          {isSwap ? "Pending Swap" : "Pending Transaction"}
+        </h2>
         <p className="mt-2 text-sm leading-relaxed text-ink/65">
-          You have an incoming payment waiting to settle into your elected mix on Robinhood Chain.
+          {isSwap
+            ? "You requested an RWA trade via Twitter. Review the route and sign the transaction on Robinhood Chain."
+            : "You have an incoming payment waiting to settle into your elected mix on Robinhood Chain."}
         </p>
 
         <div className="mt-5 space-y-2.5 rounded-xl border border-ink/10 bg-cream/70 p-4 text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-ink/50">Amount:</span>
-            <span className="font-mono font-bold text-ink">
-              {tx.amount} {tx.token?.toUpperCase()}
-            </span>
-          </div>
-          {tx.requested_by_wallet ? (
-            <div className="flex items-center justify-between">
-              <span className="text-ink/50">Sender:</span>
-              <span className="font-semibold text-ink">{shortAddress(tx.requested_by_wallet)}</span>
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between">
-            <span className="text-ink/50">Target:</span>
-            <span className="font-semibold text-ink">
-              {tx.target_value ? `@${tx.target_value.replace(/^[@#]/, "")}` : "Your Tag"}
-            </span>
-          </div>
+          {isSwap ? (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-ink/50">You Pay:</span>
+                <span className="font-mono font-bold text-ink">
+                  {tx.amount} {tx.token?.toUpperCase()}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-ink/50">You Receive:</span>
+                <span className="font-mono font-bold text-ink">
+                  {tx.target_value?.toUpperCase()}
+                </span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flex items-center justify-between">
+                <span className="text-ink/50">Amount:</span>
+                <span className="font-mono font-bold text-ink">
+                  {tx.amount} {tx.token?.toUpperCase()}
+                </span>
+              </div>
+              {tx.requested_by_wallet ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-ink/50">Sender:</span>
+                  <span className="font-semibold text-ink">{shortAddress(tx.requested_by_wallet)}</span>
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between">
+                <span className="text-ink/50">Target:</span>
+                <span className="font-semibold text-ink">
+                  {tx.target_value ? `@${tx.target_value.replace(/^[@#]/, "")}` : "Your Tag"}
+                </span>
+              </div>
+            </>
+          )}
           {tx.tweet_url ? (
             <div className="flex items-center justify-between">
               <span className="text-ink/50">Source:</span>
@@ -290,10 +316,10 @@ function PendingTxReviewModal({ tx, onDismiss }: { tx: V2PendingTxRow; onDismiss
 
         <div className="mt-6 flex flex-col gap-2.5">
           <a
-            href={`/pay/${pendingTxKey(tx)}`}
+            href={reviewUrl}
             className="w-full rounded-full bg-ink py-3 text-center text-sm font-bold text-cream transition-colors hover:bg-ink/85"
           >
-            Review & Settle Now
+            {isSwap ? "Review & Execute Trade ↗" : "Review & Settle Now"}
           </a>
           <button
             type="button"

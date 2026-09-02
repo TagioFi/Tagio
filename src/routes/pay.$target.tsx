@@ -41,14 +41,28 @@ function PayPage() {
   const pendingQuery = useV2PendingTransaction(isPendingTx ? target : undefined);
   const pendingTx = pendingQuery.data;
 
+  // If this pending transaction is a swap, redirect to /trade immediately
+  useEffect(() => {
+    if (pendingTx?.transaction) {
+      const isSwap =
+        pendingTx.transaction.kind === "swap" || pendingTx.transaction.target_type === "swap";
+      if (isSwap) {
+        window.location.replace(`/trade?id=${pendingTx.transaction.id || target}`);
+      }
+    }
+  }, [pendingTx, target]);
+
   // Resolve recipient handle from invoice or pending transaction or route target
   const handle = isInvoice
     ? invoice?.recipient_handle
     : isPendingTx
-      ? pendingTx?.handleDetails?.handle || pendingTx?.transaction?.target_value?.replace(/^[@#]/, "")
+      ? pendingTx?.handleDetails?.handle ||
+        (pendingTx?.transaction?.target_type !== "swap"
+          ? pendingTx?.transaction?.target_value?.replace(/^[@#]/, "")
+          : undefined)
       : target;
 
-  const handleQuery = useV2Handle(handle);
+  const handleQuery = useV2Handle(isPendingTx && !pendingTx ? undefined : handle);
 
   const { address, isConnected, isWrongNetwork, walletClient } = useWallet();
   const [amount, setAmount] = useState("");
