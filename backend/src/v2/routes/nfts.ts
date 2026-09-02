@@ -5,8 +5,6 @@ import {
   isAddress,
   encodeFunctionData,
   parseAbi,
-  keccak256,
-  toHex,
 } from "viem";
 import { getHandleDetails } from "../services/handleService";
 import { pool } from "../../db/pool";
@@ -15,7 +13,6 @@ const router = Router();
 
 const RPC_URL = "https://rpc.mainnet.chain.robinhood.com";
 const CHAIN_ID = 4663;
-export const HASHTAG_NFT_ADDRESS = "0x364469b9709D7E0E2bf6a049Aca3a8B436FbcEa3" as `0x${string}`;
 
 const client = createPublicClient({
   transport: http(RPC_URL),
@@ -25,7 +22,6 @@ const ERC721_ABI = parseAbi([
   "function name() view returns (string)",
   "function symbol() view returns (string)",
   "function ownerOf(uint256 tokenId) view returns (address)",
-  "function tokenURI(uint256 tokenId) view returns (string)",
   "function safeTransferFrom(address from, address to, uint256 tokenId)",
   "function transferFrom(address from, address to, uint256 tokenId)",
 ]);
@@ -36,7 +32,6 @@ router.get("/v2/nfts/resolve-target/:target", async (req, res, next) => {
     const rawTarget = req.params.target.trim();
 
     if (isAddress(rawTarget)) {
-      // Check if this wallet is linked to a handle
       const identityRes = await pool.query(
         "SELECT x_handle, display_name, avatar_url FROM v2_handles WHERE LOWER(owner_wallet) = LOWER($1) LIMIT 1",
         [rawTarget]
@@ -53,12 +48,11 @@ router.get("/v2/nfts/resolve-target/:target", async (req, res, next) => {
       });
     }
 
-    // Treat as handle
     const details = await getHandleDetails(rawTarget);
     if (!details) {
       return res.status(404).json({
         resolved: false,
-        error: `Handle '${rawTarget}' is not registered on TagioFi yet.`,
+        error: `Handle '${rawTarget}' is not registered on TagioFi.`,
       });
     }
 
@@ -85,13 +79,13 @@ router.post("/v2/nfts/transfer-plan", async (req, res, next) => {
     }
 
     if (!target || typeof target !== "string") {
-      return res.status(400).json({ error: "Target recipient handle or address is required." });
+      return res.status(400).json({ error: "Recipient handle or wallet address is required." });
     }
 
-    const nftContract = (contractAddress?.trim() || HASHTAG_NFT_ADDRESS) as `0x${string}`;
-    if (!isAddress(nftContract)) {
-      return res.status(400).json({ error: "Invalid NFT contract address." });
+    if (!contractAddress || !isAddress(contractAddress.trim())) {
+      return res.status(400).json({ error: "Please enter a valid NFT contract address." });
     }
+    const nftContract = contractAddress.trim() as `0x${string}`;
 
     if (tokenId === undefined || tokenId === null || tokenId === "") {
       return res.status(400).json({ error: "Token ID is required." });
@@ -126,11 +120,11 @@ router.post("/v2/nfts/transfer-plan", async (req, res, next) => {
     }
 
     if (recipientWallet.toLowerCase() === fromWallet.toLowerCase()) {
-      return res.status(400).json({ error: "Sender and recipient addresses cannot be identical." });
+      return res.status(400).json({ error: "Sender and recipient addresses cannot be the same." });
     }
 
     // 2. Onchain Metadata & Ownership Verification
-    let tokenName = "Unknown Collection";
+    let tokenName = "NFT Collection";
     let tokenSymbol = "NFT";
     let currentOwner: string | null = null;
 
@@ -159,13 +153,13 @@ router.post("/v2/nfts/transfer-plan", async (req, res, next) => {
       });
     } catch (err: any) {
       return res.status(400).json({
-        error: `Could not verify token #${parsedTokenId.toString()} on contract ${nftContract}: token may not exist or contract is not ERC-721.`,
+        error: `Could not find token #${parsedTokenId.toString()} on contract ${nftContract}. Please check the contract and token ID.`,
       });
     }
 
     if (currentOwner && currentOwner.toLowerCase() !== fromWallet.toLowerCase()) {
       return res.status(403).json({
-        error: `Wallet ${fromWallet} is not the current owner of token #${parsedTokenId.toString()} (Owner: ${currentOwner}).`,
+        error: `Your connected wallet does not own token #${parsedTokenId.toString()} (Owner: ${currentOwner}).`,
       });
     }
 
@@ -190,7 +184,6 @@ router.post("/v2/nfts/transfer-plan", async (req, res, next) => {
         tokenId: parsedTokenId.toString(),
         name: tokenName,
         symbol: tokenSymbol,
-        isHashtagNFT: nftContract.toLowerCase() === HASHTAG_NFT_ADDRESS.toLowerCase(),
       },
       sender: {
         walletAddress: fromWallet.toLowerCase(),
@@ -203,56 +196,6 @@ router.post("/v2/nfts/transfer-plan", async (req, res, next) => {
       },
       transaction,
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// GET /v2/nfts/tags/:walletAddress — List Tagio Hashtag NFTs owned by this wallet
-router.get("/v2/nfts/tags/:walletAddress", async (req, res, next) => {
-  try {
-    const wallet = req.params.walletAddress.toLowerCase();
-
-    // Query registered handles for this wallet
-    const { rows } = await pool.query(
-      `SELECT id, handle, display_name, avatar_url, created_at
-       FROM v2_handles WHERE LOWER(owner_wallet) = $1`,
-      [wallet]
-    );
-
-    const tagsWithTokens = await Promise.all(
-      rows.map(async (row) => {
-        const normalized = row.handle.toLowerCase();
-        // HashtagNFT uses uint256(keccak256(bytes(normalized)))
-        const hash = keccak256(toHex(normalized));
-        const tokenId = BigInt(hash).toString();
-
-        let isVerifiedOnchain = false;
-        try {
-          const onchainOwner = await client.readContract({
-            address: HASHTAG_NFT_ADDRESS,
-            abi: ERC721_ABI,
-            functionName: "ownerOf",
-            args: [BigInt(tokenId)],
-          });
-          isVerifiedOnchain = onchainOwner.toLowerCase() === wallet;
-        } catch {
-          // May not be minted to contract yet if soft-registered
-        }
-
-        return {
-          handle: row.handle,
-          displayName: row.display_name,
-          avatarUrl: row.avatar_url,
-          contractAddress: HASHTAG_NFT_ADDRESS,
-          tokenId,
-          isVerifiedOnchain,
-          createdAt: row.created_at,
-        };
-      })
-    );
-
-    res.json({ tags: tagsWithTokens });
   } catch (err) {
     next(err);
   }
