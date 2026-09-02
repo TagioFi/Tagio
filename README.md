@@ -17,6 +17,12 @@
   Set your receive-mix once. Inbound payments in ETH or USDG settle atomically into the assets you actually keep — tokenized equities, ETFs, metals, or stables — in a single signature on Robinhood Chain.
 </p>
 
+<p align="center">
+  <strong>Official Token Contract ($TGIO):</strong><br/>
+  <code>0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8</code><br/>
+  <a href="https://robinhoodchain.blockscout.com/token/0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8">View on Robinhood Blockscout ↗</a>
+</p>
+
 [**Launch Settlement Studio**](https://tagiopay.com/app) · [**Explore Roadmap**](https://tagiopay.com/roadmap) · [**Read Docs**](https://tagiopay.com/site/docs.html) · [**Follow on X**](https://x.com/tagiofi)
 
 ---
@@ -161,6 +167,7 @@ forge test -vvv
 | **Network** | Robinhood Chain Mainnet |
 | **Chain ID** | `4663` |
 | **Currency** | `ETH` |
+| **Official Token ($TGIO)** | [`0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8`](https://robinhoodchain.blockscout.com/token/0x0866ec4adb5e35c9cbfba9dfb5461d4364897da8) |
 | **Explorer** | [robinhoodchain.blockscout.com](https://robinhoodchain.blockscout.com) |
 | **Native Stablecoin** | `USDG` (`0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168`) |
 | **Supported RWA Equities** | `SPCX`, `AAPL`, `NVDA`, `TSLA`, `GOOGL`, `AMZN`, `MSFT`, `META`, `COIN` |
